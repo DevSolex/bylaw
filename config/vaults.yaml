@@ -1,10 +1,159 @@
-# Curated vault metadata
-# All fields listed here are labeled "curated" in the Vault data_sources dict.
-# Risk scores (1=lowest, 5=highest) are assigned by the project team based on
-# asset class (government bills < investment-grade bonds < private credit),
-# redemption speed (instant < days < weeks), and chain maturity.
-# Each entry includes an as_of date so staleness is visible.
+# config/vaults.yaml — curated vault metadata
 #
-# This file is populated in M3.
+# PURPOSE
+# -------
+# Fields that no live API provides (risk scores, APY where unavailable, etc.)
+# are maintained here by the project team. Every field has an `as_of` date.
+#
+# RISK SCORE METHODOLOGY (project heuristic — not a rating agency score)
+# -----------------------------------------------------------------------
+# Risk scores (1 = lowest, 5 = highest) are assigned by the Bylaw team using
+# three factors:
+#   1. Asset class:
+#        Government/sovereign bills or bonds       -> base 1-2
+#        Investment-grade corporate bonds          -> base 2-3
+#        Private credit / illiquid instruments     -> base 3-5
+#   2. Redemption speed:
+#        Instant or same-day redemption            -> -0.5 (floor 1)
+#        Multi-week or async redemption            -> +0.5 to +1
+#   3. Chain/protocol maturity:
+#        Battle-tested L1 with audited contract    -> no adjustment
+#        Newer or unaudited protocol               -> +0.5
+#
+# These scores are illustrative heuristics for the allocation algorithm.
+# They are NOT investment ratings, credit scores, or financial advice.
+#
+# SOURCE LABELS
+# -------------
+# live      : read from a live RPC or API at request time
+# curated   : this file, with an as_of date
+# simulated : synthetic demo data, never real
 
-vaults: []
+vaults:
+
+  # ── IXS Permissionless Vault (live + curated mix) ──────────────────
+  - id: ixs-rwa-bnb
+    name: "IXS RWA Permissionless Vault"
+    chain: "bsc"
+    asset: "USDC"
+    contract_address: "0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82"
+
+    # Live fields read from BNB RPC (paused, total_assets) — fall back to curated
+    apy: null
+    apy_note: "no confirmed live source; compass endpoint not available"
+    redemption_days: 5
+    redemption_note: "async ERC-7540; ~3-7 business day estimate (assumption — see findings.md)"
+    settlement: "async"
+    risk: 4
+    risk_note: "private RWA credit, async redemption, BSC protocol; project heuristic"
+    paused: false
+    available_liquidity_usdc: null
+
+    as_of: "2026-09-20"
+    data_sources:
+      paused: "live"
+      available_liquidity_usdc: "live"
+      apy: "curated"
+      redemption_days: "curated"
+      risk: "curated"
+
+  # ── Simulated vaults ────────────────────────────────────────────────
+
+  - id: mock-tbill
+    name: "T-Bill Yield Fund"
+    chain: "ethereum"
+    asset: "USDC"
+    apy: 0.052
+    apy_note: "illustrative; US 3-month T-Bill ~5.2% Aug 2026"
+    redemption_days: 0
+    settlement: "sync"
+    risk: 1
+    risk_note: "govt-bill exposure, instant sync redemption; project heuristic"
+    paused: false
+    available_liquidity_usdc: null
+    as_of: "2026-09-20"
+    data_sources:
+      apy: "curated"
+      redemption_days: "curated"
+      risk: "curated"
+      paused: "simulated"
+      available_liquidity_usdc: "simulated"
+
+  - id: mock-bond
+    name: "Investment-Grade Bond Vault"
+    chain: "ethereum"
+    asset: "USDC"
+    apy: 0.079
+    apy_note: "illustrative; IG corporate bond index ~7.9% Aug 2026"
+    redemption_days: 3
+    settlement: "sync"
+    risk: 3
+    risk_note: "IG corporate exposure, 3-day redemption; project heuristic"
+    paused: false
+    available_liquidity_usdc: null
+    as_of: "2026-09-20"
+    data_sources:
+      apy: "curated"
+      redemption_days: "curated"
+      risk: "curated"
+      paused: "simulated"
+      available_liquidity_usdc: "simulated"
+
+  - id: mock-credit
+    name: "Private Credit Pool"
+    chain: "ethereum"
+    asset: "USDC"
+    apy: 0.112
+    apy_note: "illustrative figure; no public benchmark"
+    redemption_days: 30
+    settlement: "async"
+    risk: 4
+    risk_note: "private credit, 30-day async redemption; project heuristic"
+    paused: false
+    available_liquidity_usdc: null
+    as_of: "2026-09-20"
+    data_sources:
+      apy: "curated"
+      redemption_days: "curated"
+      risk: "curated"
+      paused: "simulated"
+      available_liquidity_usdc: "simulated"
+
+  - id: mock-mm
+    name: "Money Market Stablecoin Vault"
+    chain: "polygon"
+    asset: "USDC"
+    apy: 0.041
+    apy_note: "illustrative; Aave USDC supply ~4.1% on Polygon Aug 2026"
+    redemption_days: 0
+    settlement: "sync"
+    risk: 2
+    risk_note: "stablecoin money-market, instant redemption, smart-contract risk; project heuristic"
+    paused: false
+    available_liquidity_usdc: null
+    as_of: "2026-09-20"
+    data_sources:
+      apy: "curated"
+      redemption_days: "curated"
+      risk: "curated"
+      paused: "simulated"
+      available_liquidity_usdc: "simulated"
+
+  - id: mock-paused
+    name: "Paused Demo Vault"
+    chain: "ethereum"
+    asset: "USDC"
+    apy: 0.090
+    redemption_days: 7
+    settlement: "async"
+    risk: 3
+    paused: true
+    paused_note: "vault is paused for maintenance — no allocation permitted"
+    available_liquidity_usdc: null
+    as_of: "2026-09-20"
+    data_sources:
+      apy: "simulated"
+      redemption_days: "simulated"
+      risk: "curated"
+      paused: "simulated"
+      available_liquidity_usdc: "simulated"
