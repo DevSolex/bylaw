@@ -1,0 +1,10 @@
+# Curated vault metadata
+# All fields listed here are labeled "curated" in the Vault data_sources dict.
+# Risk scores (1=lowest, 5=highest) are assigned by the project team based on
+# asset class (government bills < investment-grade bonds < private credit),
+# redemption speed (instant < days < weeks), and chain maturity.
+# Each entry includes an as_of date so staleness is visible.
+#
+# This file is populated in M3.
+
+vaults: []
