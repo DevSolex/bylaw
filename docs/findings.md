@@ -5,26 +5,26 @@
 
 **Candidate address:** `0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82`  
 **Chain:** BNB Smart Chain (chain ID 56)  
-**Status:** PARTIALLY CONFIRMED — 2026-09-20
+**Status:** CONFIRMED via public BSC RPC — 2026-09-20
 
-**Evidence confirmed via public BSC RPC (`bsc-dataseed.binance.org`):**
-- `eth_getCode` returns bytecode (length 262 chars) — contract exists ✓
-- `paused()` selector `0x5c975abb` → `0x000...000` (not paused) ✓
-- `totalAssets()` selector `0x01e1d114` → raw `654372319588990851422` (~654 units at 18 decimals) ✓
-- `totalSupply()` selector `0x18160ddd` → ~601 share tokens ✓
-- `availableAssets()` (selector `0xf8b2cb4f`) → reverts; function not present or different signature
-- `maxWithdraw(address)` selector `0xce96cb77` → returns 0 for zero address (function present)
+**All calls confirmed via `bsc-dataseed.binance.org`:**
 
-**Unconfirmed:**
-- Contract is not verified on BscScan (no API key available; public query returned NOTOK)
-- Cannot confirm this is the IXS-labelled vault without a verified ABI
-- Asset decimals: raw value suggests 18 decimals, but USDC on BSC uses 6 decimals —
-  the underlying asset may be a wrapped token or the vault share itself
+| Function | Selector | Result | Notes |
+|---|---|---|---|
+| `paused()` | `0x5c975abb` | `false` | vault is active |
+| `totalAssets()` | `0x01e1d114` | `654.3723` USDC | using 18 decimals |
+| `asset()` | `0x38d52e0f` | `0x8ac76a51...580d` | BSC USDC address ✓ |
+| `asset.decimals()` | `0x313ce567` | `18` | BSC USDC uses 18 dec (unlike Eth USDC) |
+| `asset.symbol()` | `0x95d89b41` | `"USDC"` | confirmed |
+| `asset.name()` | `0x06fdde03` | `"USD Coin"` | confirmed |
+| `vault.decimals()` | `0x313ce567` | `18` | |
+| `vault.symbol()` | `0x95d89b41` | `"ixv1"` | IXS vault token symbol |
+| `pricePerShare()` | `0x99530b06` | `1.08859600` USDC/share | yield accrued since inception |
+| `convertToAssets(1e18)` | `0x07a2d13a` | same as pricePerShare | ERC-4626 confirmed |
+| `availableAssets()` | `0xf8b2cb4f` | reverts | function not present |
 
-**Assumption recorded:** Treated as the IXS RWA vault per the candidate address
-provided. All live-read values labeled `live`. Decimal assumption: 18 (unverified).
-
-**Fallback:** If RPC unavailable, uses curated snapshot in `config/vaults.yaml`.
+**TVL:** ~654 USDC (small vault — likely a testnet/early deployment).  
+**Note:** 100 000 USDC demo budget vastly exceeds TVL. Capacity warning shown in UI.
 
 ---
 
@@ -43,9 +43,23 @@ and labeled `curated` with a note that it is an assumption.
 
 **Status:** No confirmed live source.  
 **Attempted:** Compass markets endpoint — no public API key or endpoint URL found.  
-**Fallback:** APY is set to `null` in the live adapter (unknown) and to an
-illustrative figure in the curated snapshot, labeled `curated` with a cited source
-and date if available, otherwise labeled `illustrative`.
+**Fallback:** APY is set to `null` in the live adapter (unknown).
+
+---
+
+## FINDING-IXS-4: Historical share-price reads unavailable
+
+**Status:** Confirmed unavailable — 2026-09-20  
+**Discovery:** `eth_call` with past block numbers (`0x74853a6` = ~30 days ago) returns
+`{"code": -32000, "message": "missing trie node"}`. The public BSC RPC
+(`bsc-dataseed.binance.org`) does not serve archive state.  
+**Impact:** Trailing APY cannot be derived on-chain from this endpoint.  
+**Resolution:**
+- `pricePerShare()` at current block = 1.08859600 USDC/share, implying the vault
+  has accrued yield since inception, but without the start date we cannot annualise.
+- APY remains `null` (live) until a reliable dated figure is provided.
+- The `vault.symbol()` = `"ixv1"` and TVL ≈ 654 USDC suggest this is an early/testnet
+  deployment; the 100,000 USDC demo budget triggers the capacity warning.
 
 ---
 
