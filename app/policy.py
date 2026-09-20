@@ -225,6 +225,23 @@ def parse_policy(
             f"Raw: {raw_json}"
         ) from exc
 
+    # ── Sanity check: liquid_days vs max_redemption_days confusion ─────
+    # If both are set and max_redemption_days <= liquid_days, the model
+    # likely confused "redeemable within N days" (a floor) with a vault
+    # exclusion. Strip max_redemption_days and warn.
+    if (
+        policy.max_redemption_days is not None
+        and policy.liquid_days > 0
+        and policy.max_redemption_days <= policy.liquid_days
+    ):
+        logger.warning(
+            "policy parse: max_redemption_days=%d <= liquid_days=%d — "
+            "likely a misparse of 'redeemable within N days'. "
+            "Clearing max_redemption_days.",
+            policy.max_redemption_days, policy.liquid_days,
+        )
+        policy = policy.model_copy(update={"max_redemption_days": None})
+
     if all_aliases:
         logger.info("policy parse: aliases used this run: %s", all_aliases)
 

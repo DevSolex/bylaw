@@ -5,8 +5,6 @@ vaults. You describe your investment constraints in plain language; Bylaw turns 
 into a verified allocation, shows you the rationale, and asks for your approval before
 doing anything.
 
-> **Hackathon entry** — RWA Vaults track, OpenServ SERV Hackathon Edition 01
-> (14–28 September 2026).
 
 ---
 
@@ -129,49 +127,4 @@ score 1–2, investment-grade bonds 2–3, private credit 3–5), redemption spe
 (instant redemption reduces the score, multi-week lockups increase it), and chain
 maturity. Each entry has an `as_of` date.
 
----
 
-## Business model
-
-Bylaw could earn revenue as a managed-allocation SaaS: institutions and DAOs pay a
-basis-point fee on assets under management, or a monthly subscription for the
-compliance-audit trail. A white-label SDK licensed to vault operators is a second
-revenue stream.
-
----
-
-## Known limitations
-
-- In `simulated` mode, vault data is synthetic. Do not use it for real investment
-  decisions.
-- On-chain execution is not yet implemented. The app produces unsigned transaction
-  payloads for the user to sign in their own wallet.
-- Only one live vault (IXS) is integrated. Peers are simulated in `mixed` mode.
-- SERV model names are not confirmed; see [OQ-5](docs/OPEN_QUESTIONS.md).
-
----
-
-## Demo script
-
-See [`docs/DEMO.md`](docs/DEMO.md) — added in M6.
-
----
-
-## Human-only submission tasks
-
-1. Enable data collection in the OpenServ console organisation settings (eligibility
-   requirement).
-2. Publish the public X post: project name, concept, images, links (GitHub, demo),
-   tag `@openservai`.
-3. Fill in the official submission form after posting.
-4. Submit before **28 September 2026 00:00 UTC**.
-
----
-
-## Open questions
-
-See [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md).
-
----
-
-*M0 skeleton — 2026-09-19.*

@@ -1,8 +1,9 @@
 # Secrets — never commit
 .env
 
-# Runtime data
-data/
+# Runtime data (docker volume)
+data/*
+!data/.gitkeep
 
 # Python
 __pycache__/
@@ -36,3 +37,4 @@ Thumbs.db
 
 # Docker
 *.log
+
