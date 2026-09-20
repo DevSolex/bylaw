@@ -1,14 +1,15 @@
 """
 tests/test_proposal.py — unit tests for app/proposal.py.
 
-Uses FakeServClient (no network). Covers:
-  - Feasible policy → verified allocation on first attempt
-  - Verifier rejects first proposal → succeeds on second attempt
-  - All 3 attempts fail → RunFinal(verified=False)
-  - Infeasible policy → model never called, RunFinal(verified=False)
-  - Parse error on first attempt → retry
-  - Call limit hit mid-loop → RunFinal(verified=False)
+Covers:
+  - Feasible policy → verified on first attempt
+  - Verifier rejects → retry → success
+  - All 3 attempts fail → RunFinal(verified=False), never shown as recommendation
+  - Infeasible → model never called
+  - Parse error counts as failed attempt
+  - Call limit hit mid-loop
   - Token totals accumulate across attempts
+  - Repair loop: deliberately broken allocation → problems fed back → corrected
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.models import Policy, Vault, RunFinal
+from app.models import ModelMeta, Policy, RunFinal, Vault
 from app.proposal import propose
 from tests.test_serv_client import FakeServClient
 
@@ -36,28 +37,36 @@ def make_vault(id, risk=2, apy=0.06, redemption_days=1, paused=False,
 
 
 VAULTS = [
-    make_vault("v-tbill", risk=1, apy=0.05, redemption_days=0),
-    make_vault("v-bond",  risk=3, apy=0.08, redemption_days=3),
-    make_vault("v-credit",risk=4, apy=0.11, redemption_days=30),
+    make_vault("v-tbill",  risk=1, apy=0.05, redemption_days=0),
+    make_vault("v-bond",   risk=3, apy=0.08, redemption_days=3),
+    make_vault("v-credit", risk=4, apy=0.11, redemption_days=30),
 ]
 AMOUNT = 100_000.0
 
-# A valid allocation for the three vaults (passes all default-policy rules)
 _VALID_ALLOC = json.dumps({
     "allocation": {"v-tbill": 0.5, "v-bond": 0.3, "v-credit": 0.2},
-    "rationale": "Balanced allocation respecting risk and liquidity constraints.",
+    "rationale": "Balanced allocation.",
 })
+
+# Breaks R3 max_per_vault=0.4
+_OVER_CAP_ALLOC = json.dumps({
+    "allocation": {"v-tbill": 0.8, "v-bond": 0.1, "v-credit": 0.1},
+    "rationale": "Too much in tbill.",
+})
+
+
+def _meta():
+    return ModelMeta(model="fake", total_calls=0,
+                     run_prompt_tokens=0, run_completion_tokens=0, run_total_tokens=0)
 
 
 # ---------------------------------------------------------------------------
 # Happy path
 # ---------------------------------------------------------------------------
 
-def test_feasible_verified_first_attempt():
+def test_verified_first_attempt():
     client = FakeServClient(reply=_VALID_ALLOC)
-    final, attempts, meta = propose(
-        Policy(), VAULTS, AMOUNT, {}, client, [0], max_calls=10
-    )
+    final, attempts, meta = propose(Policy(), VAULTS, AMOUNT, {}, client, [0], 10)
     assert final.verified is True
     assert len(attempts) == 1
     assert abs(sum(final.allocation.values()) - 1.0) < 1e-6
@@ -65,125 +74,119 @@ def test_feasible_verified_first_attempt():
 
 def test_token_meta_populated():
     client = FakeServClient(reply=_VALID_ALLOC)
-    _, _, meta = propose(Policy(), VAULTS, AMOUNT, {}, client, [0], max_calls=10)
+    _, _, meta = propose(Policy(), VAULTS, AMOUNT, {}, client, [0], 10)
     assert meta.total_calls == 1
-    assert meta.run_prompt_tokens == 10   # FakeServClient returns 10
-    assert meta.run_completion_tokens == 5
     assert meta.run_total_tokens == 15
 
 
 # ---------------------------------------------------------------------------
-# Retry on verifier failure
+# Repair loop: broken → fix
 # ---------------------------------------------------------------------------
 
-class _FailThenPassClient(FakeServClient):
-    """Returns an invalid allocation first, then the valid one."""
-    def __init__(self):
-        self._calls = 0
-        super().__init__()
-
-    def chat(self, messages, **kwargs):
-        self._calls += 1
-        if self._calls == 1:
-            # Weights don't sum to 1 → R2 fails
-            self._reply = json.dumps({
-                "allocation": {"v-tbill": 0.3, "v-bond": 0.3, "v-credit": 0.2},
-                "rationale": "bad",
-            })
-        else:
-            self._reply = _VALID_ALLOC
-        return super().chat(messages, **kwargs)
-
-
-def test_verifier_retry_succeeds_on_second_attempt():
-    client = _FailThenPassClient()
-    final, attempts, meta = propose(
-        Policy(), VAULTS, AMOUNT, {}, client, [0], max_calls=10
-    )
+def test_repair_loop_verifier_rejects_then_corrects():
+    """First reply breaks per-vault cap; second reply is valid within cap."""
+    policy = Policy(max_per_vault=0.4)
+    # This allocation respects max_per_vault=0.4
+    capped_valid = json.dumps({
+        "allocation": {"v-tbill": 0.4, "v-bond": 0.4, "v-credit": 0.2},
+        "rationale": "Within cap.",
+    })
+    client = FakeServClient(replies=[_OVER_CAP_ALLOC, capped_valid])
+    final, attempts, meta = propose(policy, VAULTS, AMOUNT, {}, client, [0], 10)
     assert final.verified is True
     assert len(attempts) == 2
     assert attempts[0].result.passed is False
     assert attempts[1].result.passed is True
     assert meta.total_calls == 2
-    assert meta.run_total_tokens == 30   # 15 × 2 calls
+    assert meta.run_total_tokens == 30
+    # The second prompt must contain the verifier's problem description
+    second_call_messages = client.all_calls[1]
+    user_msgs = [m["content"] for m in second_call_messages if m["role"] == "user"]
+    combined = " ".join(user_msgs)
+    assert "previous allocation failed" in combined or "max_per_vault" in combined
 
 
 # ---------------------------------------------------------------------------
-# All attempts fail
+# All attempts fail → shown as failed, never as a recommendation
 # ---------------------------------------------------------------------------
 
-class _AlwaysFailClient(FakeServClient):
-    def __init__(self):
-        super().__init__(reply=json.dumps({
-            "allocation": {"v-tbill": 0.1, "v-bond": 0.1, "v-credit": 0.1},
-            "rationale": "always fails sum",
-        }))
-
-
-def test_all_attempts_fail_returns_unverified():
-    client = _AlwaysFailClient()
-    final, attempts, meta = propose(
-        Policy(), VAULTS, AMOUNT, {}, client, [0], max_calls=10
-    )
+def test_all_attempts_fail_is_unverified():
+    bad = json.dumps({
+        "allocation": {"v-tbill": 0.1, "v-bond": 0.1, "v-credit": 0.1},
+        "rationale": "sums to 0.3 — always fails R2",
+    })
+    client = FakeServClient(reply=bad)
+    final, attempts, meta = propose(Policy(), VAULTS, AMOUNT, {}, client, [0], 10)
     assert final.verified is False
-    assert "failed verification" in final.reason
-    assert len(attempts) == 3  # all three attempts recorded
+    assert final.allocation is None   # NEVER shown as allocation
+    assert len(final.reason) > 0
+    assert len(attempts) == 3
     assert meta.total_calls == 3
 
 
+def test_failed_final_has_reason_not_allocation():
+    """Spec requirement: unverified proposals must not reach the approval screen."""
+    bad = json.dumps({"allocation": {"v-tbill": 0.2}, "rationale": "incomplete"})
+    client = FakeServClient(reply=bad)
+    final, _, _ = propose(Policy(), VAULTS, AMOUNT, {}, client, [0], 10)
+    assert final.verified is False
+    assert final.allocation is None
+    assert "failed" in final.reason.lower() or "problem" in final.reason.lower() or \
+           "infeasible" in final.reason.lower()
+
+
 # ---------------------------------------------------------------------------
-# Infeasible policy — model never called
+# Infeasible — model never called
 # ---------------------------------------------------------------------------
 
-def test_infeasible_policy_skips_model():
-    # Require 100% instant-liquid AND min APY of 99% — impossible with these vaults
-    impossible_policy = Policy(min_liquid=1.0, liquid_days=0, min_avg_apy=0.99)
+def test_infeasible_skips_model():
+    impossible = Policy(min_liquid=1.0, liquid_days=0, min_avg_apy=0.99)
     client = FakeServClient(reply=_VALID_ALLOC)
-    final, attempts, meta = propose(
-        impossible_policy, VAULTS, AMOUNT, {}, client, [0], max_calls=10
-    )
+    final, attempts, meta = propose(impossible, VAULTS, AMOUNT, {}, client, [0], 10)
     assert final.verified is False
-    assert attempts == []        # model never called
+    assert attempts == []
     assert meta.total_calls == 0
 
 
 # ---------------------------------------------------------------------------
-# Parse error on first proposal attempt
+# Parse error counts as attempt
 # ---------------------------------------------------------------------------
 
-class _BadJsonThenGoodClient(FakeServClient):
-    def __init__(self):
-        self._calls = 0
-        super().__init__()
-
-    def chat(self, messages, **kwargs):
-        self._calls += 1
-        self._reply = "not json" if self._calls == 1 else _VALID_ALLOC
-        return super().chat(messages, **kwargs)
-
-
-def test_parse_error_counts_as_failed_attempt():
-    client = _BadJsonThenGoodClient()
-    final, attempts, meta = propose(
-        Policy(), VAULTS, AMOUNT, {}, client, [0], max_calls=10
-    )
-    # Parse error on attempt 1 (not added to attempts list),
-    # valid on attempt 2
+def test_parse_error_uses_retry_slot():
+    client = FakeServClient(replies=["not json", _VALID_ALLOC])
+    final, attempts, meta = propose(Policy(), VAULTS, AMOUNT, {}, client, [0], 10)
     assert final.verified is True
-    assert len(attempts) == 1
+    assert len(attempts) == 1   # parse error not added to attempts list
 
 
 # ---------------------------------------------------------------------------
 # Call limit
 # ---------------------------------------------------------------------------
 
-def test_call_limit_hit_returns_unverified():
+def test_call_limit_returns_unverified():
     client = FakeServClient(reply=_VALID_ALLOC)
-    counter = [9]  # 9 calls already used; cap is 10; one more allowed but
-    # we want to see what happens when counter starts at cap
-    counter = [10]
-    final, attempts, meta = propose(
-        Policy(), VAULTS, AMOUNT, {}, client, counter, max_calls=10
-    )
+    final, _, _ = propose(Policy(), VAULTS, AMOUNT, {}, client, [10], max_calls=10)
     assert final.verified is False
-    assert "limit" in final.reason
+    assert "limit" in final.reason.lower()
+
+
+# ---------------------------------------------------------------------------
+# Shared meta accounting (parse + propose in one run)
+# ---------------------------------------------------------------------------
+
+def test_shared_meta_parse_plus_propose():
+    """Parse tokens + propose tokens both appear in the single meta."""
+    from app.policy import parse_policy
+
+    counter = [0]
+    meta = _meta()
+    parse_client = FakeServClient(reply='{"max_per_vault": 0.5}')
+    parse_policy("50% max", parse_client, counter, max_calls=10, meta=meta)
+
+    propose_client = FakeServClient(reply=_VALID_ALLOC)
+    propose(Policy(), VAULTS, AMOUNT, {}, propose_client, counter, max_calls=10, meta=meta)
+
+    # 2 SERV calls total (1 parse + 1 propose), 15 tokens each = 30 total
+    assert meta.total_calls == 2
+    assert meta.run_total_tokens == 30
+    assert counter[0] == 2

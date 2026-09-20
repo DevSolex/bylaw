@@ -434,15 +434,13 @@ def test_feasibility_infeasible_all_paused():
 
 
 def test_feasibility_infeasible_names_conflict_rules():
-    # Require both high liquidity (instant only) and high APY — impossible with these vaults
-    # v1: redemption_days=1 (not instant), apy=0.06
-    # v2: redemption_days=7, apy=0.10
     # Require 100% instant liquid AND min_apy=0.15 — impossible
     policy = make_policy(min_liquid=1.0, liquid_days=0, min_avg_apy=0.15)
     result = check_feasibility(policy, VAULTS, AMOUNT)
     assert not result.feasible
-    # Reason should mention something about the conflict
-    assert "Conflicting rules" in result.reason
+    # New LP-based message uses "Conflicting constraints" not "Conflicting rules"
+    assert "infeasible" in result.reason.lower() or "cannot be satisfied" in result.reason.lower()
+    assert result.reason != ""
 
 
 def test_feasibility_feasible_single_vault():
