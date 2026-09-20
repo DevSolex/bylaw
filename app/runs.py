@@ -1,1 +1,58 @@
-"""Audit log store (JSON files in ./data/runs) — implemented in M4."""
+"""
+app/runs.py — audit log store.
+
+Runs are saved as JSON files in ./data/runs/<id>.json.
+The ./data directory is a Docker volume so runs survive restarts.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+from app.models import Run
+
+logger = logging.getLogger(__name__)
+
+_RUNS_DIR = Path("/app/data/runs")
+
+
+def _ensure_dir() -> Path:
+    _RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    return _RUNS_DIR
+
+
+def new_run_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+def save_run(run: Run) -> None:
+    d = _ensure_dir()
+    path = d / f"{run.id}.json"
+    path.write_text(run.model_dump_json(indent=2), encoding="utf-8")
+    logger.debug("run saved: %s", path)
+
+
+def load_run(run_id: str) -> Run | None:
+    path = _ensure_dir() / f"{run_id}.json"
+    if not path.exists():
+        return None
+    try:
+        return Run.model_validate_json(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.error("failed to load run %s: %s", run_id, exc)
+        return None
+
+
+def list_runs(limit: int = 100) -> list[Run]:
+    d = _ensure_dir()
+    paths = sorted(d.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    runs: list[Run] = []
+    for p in paths[:limit]:
+        try:
+            runs.append(Run.model_validate_json(p.read_text(encoding="utf-8")))
+        except Exception as exc:
+            logger.warning("skipping corrupt run file %s: %s", p.name, exc)
+    return runs
