@@ -1,24 +1,556 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Bylaw — Your risk policy, enforced.</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 700px; margin: 4rem auto; padding: 0 1rem; color: #222; }
-    h1 { font-size: 1.8rem; }
-    p  { line-height: 1.6; color: #555; }
-    .badge { display: inline-block; background: #f0f4ff; border: 1px solid #c0caff; border-radius: 4px; padding: 2px 8px; font-size: 0.8rem; }
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --bg: #f7f8fa; --card: #fff; --border: #dde2ec;
+      --text: #1a1d23; --muted: #6b7280; --accent: #2563eb;
+      --green: #16a34a; --red: #dc2626; --warn: #d97706;
+      --orange: #ea580c;
+    }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text);
+           margin: 0; padding: 0; font-size: 15px; }
+    h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 4px; }
+    h2 { font-size: 1.05rem; font-weight: 600; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .container { max-width: 900px; margin: 0 auto; padding: 16px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+
+    /* Banner */
+    #banner { padding: 10px 16px; font-size: .85rem; font-weight: 600; border-bottom: 1px solid var(--border); }
+    #banner.offline  { background: #fef3c7; color: #92400e; }
+    #banner.live     { background: #dcfce7; color: #14532d; }
+    #banner.simulated{ background: #eff6ff; color: #1e40af; }
+    #banner.warn     { background: #fff7ed; color: #9a3412; }
+
+    /* Badges */
+    .badge { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: .75rem; font-weight: 600; }
+    .badge-live      { background: #dcfce7; color: #14532d; }
+    .badge-curated   { background: #eff6ff; color: #1e40af; }
+    .badge-simulated { background: #f3f4f6; color: #374151; }
+    .badge-pass  { background: #dcfce7; color: #14532d; }
+    .badge-fail  { background: #fee2e2; color: #991b1b; }
+    .badge-warn  { background: #fff7ed; color: #9a3412; }
+    .badge-async { background: #fef3c7; color: #92400e; }
+
+    /* Inputs */
+    textarea, input[type=text], input[type=number], select {
+      width: 100%; padding: 8px 10px; border: 1px solid var(--border);
+      border-radius: 6px; font-size: .95rem; font-family: inherit; }
+    textarea { resize: vertical; }
+    button { padding: 8px 18px; border: none; border-radius: 6px; font-size: .95rem;
+             font-weight: 600; cursor: pointer; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { opacity: .5; cursor: default; }
+    .btn-approve { background: var(--green); color: #fff; }
+    .btn-reject  { background: var(--red);   color: #fff; }
+    .btn-ghost   { background: #f3f4f6; color: var(--text); }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th { text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--border); color: var(--muted); font-size: .8rem; text-transform: uppercase; }
+    td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+
+    /* Misc */
+    .row { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+    .col { flex: 1; min-width: 180px; }
+    .muted { color: var(--muted); font-size: .85rem; }
+    .error { color: var(--red); font-size: .9rem; background: #fee2e2; padding: 8px 12px; border-radius: 6px; }
+    .warn-box { color: var(--warn); font-size: .9rem; background: #fff7ed; padding: 8px 12px; border-radius: 6px; margin-top: 8px; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin-right: 6px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
+    pre { background: #f3f4f6; border-radius: 6px; padding: 12px; overflow: auto; font-size: .8rem; }
+    .stat { display: inline-block; background: #f3f4f6; border-radius: 5px; padding: 3px 8px; font-size: .8rem; margin-right: 6px; }
+    .progress-bar { height: 10px; border-radius: 5px; background: var(--border); overflow: hidden; margin-top: 4px; }
+    .progress-fill { height: 100%; background: var(--accent); }
+    #history-list { list-style: none; padding: 0; margin: 0; }
+    #history-list li { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: .88rem; display: flex; justify-content: space-between; }
   </style>
 </head>
 <body>
-  <h1>Bylaw</h1>
-  <p><em>Your risk policy, enforced.</em></p>
-  <p>The full UI is coming in <strong>M4</strong>. The API is already live:</p>
-  <ul>
-    <li><a href="/healthz">/healthz</a> — liveness probe</li>
-    <li><a href="/docs">/docs</a> — OpenAPI / Swagger</li>
-  </ul>
-  <p><span class="badge">M0 skeleton</span></p>
+
+<!-- ── Banner ─────────────────────────────────────────── -->
+<div id="banner" class="simulated">Loading…</div>
+
+<div class="container">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+    <div>
+      <h1>Bylaw</h1>
+      <p class="muted" style="margin:0">Your risk policy, enforced.</p>
+    </div>
+    <div id="token-counter" class="hidden">
+      <span class="stat" id="stat-calls">calls: 0</span>
+      <span class="stat" id="stat-tokens">tokens: 0</span>
+    </div>
+  </div>
+
+  <!-- ── Section 1: Policy input ──────────────────────── -->
+  <div class="card" id="section-policy">
+    <h2>1 · Investment policy</h2>
+    <div class="row" style="margin-bottom:8px; gap:6px;">
+      <button class="btn-ghost" onclick="setPreset(0)">Conservative</button>
+      <button class="btn-ghost" onclick="setPreset(1)">Balanced</button>
+      <button class="btn-ghost" onclick="setPreset(2)">Growth</button>
+    </div>
+    <textarea id="policy-text" rows="3" placeholder="e.g. No more than 40% in any vault, keep 20% redeemable within 1 day, average risk no higher than 3."></textarea>
+    <div class="row" style="margin-top:10px; gap:10px; align-items:center;">
+      <div class="col">
+        <label class="muted">Amount (USDC)</label>
+        <input type="number" id="amount" value="100000" min="1"/>
+      </div>
+      <div style="padding-top:18px;">
+        <button class="btn-primary" id="btn-propose" onclick="runPropose()">Propose allocation</button>
+      </div>
+    </div>
+    <div id="parse-error" class="error hidden" style="margin-top:8px;"></div>
+  </div>
+
+  <!-- ── Section 2: Parsed policy confirmation ─────────── -->
+  <div class="card hidden" id="section-parsed">
+    <h2>2 · Parsed policy <span id="parsed-offline-badge"></span></h2>
+    <table id="parsed-table"></table>
+    <div id="uncaptured-note" class="warn-box hidden"></div>
+  </div>
+
+  <!-- ── Section 3: Vault snapshot ─────────────────────── -->
+  <div class="card hidden" id="section-vaults">
+    <h2>3 · Vault snapshot</h2>
+    <div id="ixs-unavailable" class="warn-box hidden"></div>
+    <table id="vault-table">
+      <thead><tr>
+        <th>Vault</th><th>Chain</th><th>APY</th><th>Redeem</th>
+        <th>Risk</th><th>Settlement</th><th>Paused</th><th>Sources</th>
+      </tr></thead>
+      <tbody id="vault-tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- ── Section 4: Proposal result ───────────────────── -->
+  <div class="card hidden" id="section-result">
+    <h2>4 · Allocation proposal</h2>
+    <div id="loading-propose" class="hidden"><span class="spinner"></span>Asking SERV…</div>
+    <div id="result-content"></div>
+  </div>
+
+  <!-- ── Section 5: Trades + Approve / Reject ──────────── -->
+  <div class="card hidden" id="section-trades">
+    <h2>5 · Trades &amp; decision</h2>
+    <table id="trades-table">
+      <thead><tr><th>Vault</th><th>Action</th><th>Amount (USDC)</th><th>Settlement</th><th>Note</th></tr></thead>
+      <tbody id="trades-tbody"></tbody>
+    </table>
+    <div style="margin-top:14px; display:flex; gap:10px;">
+      <button class="btn-approve" id="btn-approve" onclick="doDecision('approve')">✓ Approve</button>
+      <button class="btn-reject"  id="btn-reject"  onclick="doDecision('reject')">✗ Reject</button>
+      <button class="btn-ghost"   onclick="reset()">Start over</button>
+    </div>
+  </div>
+
+  <!-- ── Section 6: Execution report ───────────────────── -->
+  <div class="card hidden" id="section-execution">
+    <h2>6 · Execution report</h2>
+    <div id="exec-content"></div>
+  </div>
+
+  <!-- ── Audit history ──────────────────────────────────── -->
+  <div class="card" id="section-history">
+    <h2>Audit history <button class="btn-ghost" style="font-size:.8rem;padding:3px 8px;" onclick="loadHistory()">Refresh</button></h2>
+    <ul id="history-list"><li class="muted">Loading…</li></ul>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+const PRESETS = [
+  "No more than 30% in any single vault. Keep 30% redeemable within 1 day. Average risk no higher than 2.",
+  "No more than 40% in any single vault. Keep 20% redeemable within 1 day. Average risk no higher than 3.",
+  "No more than 50% in any single vault. Average risk no higher than 4. Minimum average APY of 7%.",
+];
+
+let _currentRunId = null;
+let _currentVaults = [];
+let _totalCalls = 0;
+let _totalTokens = 0;
+
+function setPreset(i) {
+  document.getElementById('policy-text').value = PRESETS[i];
+}
+
+function show(id)  { document.getElementById(id).classList.remove('hidden'); }
+function hide(id)  { document.getElementById(id).classList.add('hidden'); }
+function $(id)     { return document.getElementById(id); }
+
+// ── Banner ──────────────────────────────────────────────────────────────
+async function refreshBanner() {
+  try {
+    const r = await fetch('/api/vaults');
+    const d = await r.json();
+    const el = $('banner');
+    el.textContent = d.banner || 'Data loaded';
+    _currentVaults = d.vaults || [];
+    if (d.offline_demo) {
+      el.className = 'offline';
+      el.textContent = '⚠ OFFLINE DEMO — model output is stubbed. No real API calls.';
+    } else if (d.data_mode === 'simulated') {
+      el.className = 'simulated';
+    } else if (d.live_count > 0) {
+      el.className = 'live';
+    } else {
+      el.className = 'simulated';
+    }
+    renderVaultTable(d.vaults || []);
+    show('section-vaults');
+    const unavail = d.vaults.some(v => Object.values(v.data_sources||{}).every(s => s === 'curated') && v.id.startsWith('ixs'));
+    if (unavail) {
+      $('ixs-unavailable').textContent = '⚠ IXS live data unavailable — showing last curated snapshot.';
+      show('ixs-unavailable');
+    }
+  } catch(e) {
+    $('banner').textContent = '⚠ Could not load vault data: ' + e.message;
+    $('banner').className = 'warn';
+  }
+}
+
+function renderVaultTable(vaults) {
+  const tbody = $('vault-tbody');
+  tbody.innerHTML = '';
+  for (const v of vaults) {
+    const srcBadge = (field) => {
+      const s = (v.data_sources || {})[field] || 'simulated';
+      return `<span class="badge badge-${s}">${s}</span>`;
+    };
+    const apy = v.apy != null ? (v.apy * 100).toFixed(1) + '%' : '<span class="muted">n/a</span>';
+    const rd = v.redemption_days != null ? (v.redemption_days === 0 ? 'instant' : v.redemption_days + 'd') : '?';
+    const paused = v.paused ? '<span class="badge badge-fail">PAUSED</span>' : '<span class="badge badge-pass">active</span>';
+    const settle = v.settlement === 'async'
+      ? '<span class="badge badge-async">async</span>'
+      : `<span class="badge badge-pass">${v.settlement||'?'}</span>`;
+    const sources = [...new Set(Object.values(v.data_sources || {}))].map(s =>
+      `<span class="badge badge-${s}">${s}</span>`).join(' ');
+    const riskColor = v.risk <= 2 ? '#16a34a' : v.risk <= 3 ? '#d97706' : '#dc2626';
+    tbody.insertAdjacentHTML('beforeend', `<tr>
+      <td><strong>${v.name}</strong><br><span class="muted" style="font-size:.8rem">${v.id}</span></td>
+      <td>${v.chain}</td>
+      <td>${apy}</td>
+      <td>${rd}</td>
+      <td><span style="color:${riskColor};font-weight:700">${v.risk}</span></td>
+      <td>${settle}</td>
+      <td>${paused}</td>
+      <td>${sources}</td>
+    </tr>`);
+  }
+}
+
+// ── Propose ─────────────────────────────────────────────────────────────
+async function runPropose() {
+  const text   = $('policy-text').value.trim();
+  const amount = parseFloat($('amount').value) || 100000;
+  if (!text) { showError('parse-error', 'Please enter a policy.'); return; }
+
+  hide('parse-error');
+  hide('section-parsed');
+  hide('section-result');
+  hide('section-trades');
+  hide('section-execution');
+
+  const btn = $('btn-propose');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Running…';
+
+  show('section-result');
+  show('loading-propose');
+  $('result-content').innerHTML = '';
+
+  try {
+    const resp = await fetch('/api/propose', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ policy_text: text, amount_usdc: amount }),
+    });
+    const d = await resp.json();
+    hide('loading-propose');
+
+    if (!resp.ok) {
+      $('result-content').innerHTML = `<div class="error">${d.detail || 'Unknown error'}</div>`;
+      return;
+    }
+
+    _currentRunId = d.run_id;
+    _totalCalls   += d.serv_calls || 0;
+    _totalTokens  += (d.tokens||{}).total || 0;
+    updateTokenCounter(d.serv_calls, (d.tokens||{}).total);
+
+    // Parsed policy section
+    renderParsedPolicy(d, text);
+    show('section-parsed');
+
+    // Result section
+    if (d.verified) {
+      renderVerifiedResult(d);
+    } else {
+      renderUnverifiedResult(d);
+    }
+
+    // Capacity warnings
+    if ((d.capacity_warnings||[]).length) {
+      let html = '';
+      for (const w of d.capacity_warnings) {
+        html += `<div class="warn-box">⚠ ${w.message}</div>`;
+      }
+      $('result-content').insertAdjacentHTML('beforeend', html);
+    }
+
+  } catch(e) {
+    hide('loading-propose');
+    $('result-content').innerHTML = `<div class="error">Network error: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Propose allocation';
+  }
+}
+
+function renderParsedPolicy(d, originalText) {
+  const policy = d.policy || {};
+  const captured = d.captured_constraints || {};
+
+  // Show offline badge
+  const offlineBadge = d.offline_demo
+    ? '<span class="badge badge-simulated">OFFLINE STUB</span>'
+    : '';
+  $('parsed-offline-badge').innerHTML = offlineBadge;
+
+  const FIELD_LABELS = {
+    max_per_vault: 'Max per vault',
+    min_liquid: 'Min liquid fraction',
+    liquid_days: 'Liquid within (days)',
+    max_avg_risk: 'Max avg risk',
+    min_avg_apy: 'Min avg APY',
+    max_redemption_days: 'Max redemption days',
+    excluded_vault_ids: 'Excluded vaults',
+  };
+
+  let rows = '';
+  for (const [k, label] of Object.entries(FIELD_LABELS)) {
+    if (k in captured) {
+      let val = captured[k];
+      if (typeof val === 'number' && (k === 'max_per_vault' || k === 'min_liquid' || k === 'min_avg_apy')) {
+        val = (val * 100).toFixed(0) + '%';
+      }
+      rows += `<tr><td>${label}</td><td><strong>${Array.isArray(val) ? val.join(', ') || 'none' : val}</strong></td></tr>`;
+    }
+  }
+  if (!rows) rows = '<tr><td colspan="2" class="muted">No constraints captured — defaults apply (no restrictions).</td></tr>';
+  $('parsed-table').innerHTML = `<thead><tr><th>Constraint</th><th>Value</th></tr></thead><tbody>${rows}</tbody>`;
+
+  // Uncaptured check — rough heuristic
+  const keywords = ['vault', 'risk', 'liquid', 'apy', 'yield', 'redeem', 'day'];
+  const capturedKeys = Object.keys(captured);
+  if (capturedKeys.length === 0 && keywords.some(k => originalText.toLowerCase().includes(k))) {
+    $('uncaptured-note').textContent =
+      '⚠ Some constraint language was detected but not captured. Check the parsed values above.';
+    show('uncaptured-note');
+  } else {
+    hide('uncaptured-note');
+  }
+}
+
+function renderVerifiedResult(d) {
+  const alloc = d.allocation || {};
+  let allocRows = '';
+  for (const [vid, w] of Object.entries(alloc)) {
+    const vault = _currentVaults.find(v => v.id === vid) || {name: vid};
+    const pct = (w * 100).toFixed(1);
+    allocRows += `<tr>
+      <td>${vault.name || vid}</td>
+      <td>${pct}%</td>
+      <td><div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div></td>
+    </tr>`;
+  }
+
+  let checklistHtml = '';
+  for (const attempt of (d.verifier_checklist || [])) {
+    const status = attempt.passed ? '<span class="badge badge-pass">PASS</span>' : '<span class="badge badge-fail">FAIL</span>';
+    checklistHtml += `<details style="margin-bottom:6px;"><summary>${status} Attempt verified=${attempt.passed}</summary>`;
+    for (const rule of (attempt.checklist || [])) {
+      const rb = rule.passed ? '<span class="badge badge-pass">✓</span>' : '<span class="badge badge-fail">✗</span>';
+      checklistHtml += `<div style="padding:3px 0 3px 12px">${rb} <strong>${rule.rule}</strong> ${rule.detail ? '— ' + rule.detail : ''}</div>`;
+    }
+    checklistHtml += '</details>';
+  }
+
+  $('result-content').innerHTML = `
+    <table style="margin-bottom:12px">
+      <thead><tr><th>Vault</th><th>Weight</th><th>Bar</th></tr></thead>
+      <tbody>${allocRows}</tbody>
+    </table>
+    <p style="margin:0 0 12px"><strong>Rationale:</strong> ${d.rationale}</p>
+    <details><summary class="muted" style="cursor:pointer">Verifier checklist (${d.attempts} attempt(s))</summary>
+      <div style="margin-top:8px">${checklistHtml}</div>
+    </details>
+    <div class="muted" style="margin-top:8px;font-size:.82rem">
+      <span class="stat">SERV calls: ${d.serv_calls}</span>
+      <span class="stat">Tokens: ${(d.tokens||{}).total || 0}</span>
+      <span class="stat">Mode: ${d.data_mode}</span>
+    </div>
+  `;
+
+  // Populate trades table and show decision section
+  renderTradesSection(d);
+  show('section-trades');
+}
+
+function renderUnverifiedResult(d) {
+  $('result-content').innerHTML = `
+    <div class="error" style="margin-bottom:8px;">
+      <strong>Allocation not verified</strong><br>${d.reason || 'No valid allocation could be found.'}
+    </div>
+    <div class="muted" style="font-size:.82rem">
+      <span class="stat">SERV calls: ${d.serv_calls}</span>
+      <span class="stat">Tokens: ${(d.tokens||{}).total || 0}</span>
+    </div>
+  `;
+  hide('section-trades');
+}
+
+function renderTradesSection(d) {
+  // Trades computed after approval; show placeholder
+  $('trades-tbody').innerHTML = `<tr><td colspan="5" class="muted">Trades will be computed on approval.</td></tr>`;
+}
+
+// ── Decision ────────────────────────────────────────────────────────────
+async function doDecision(decision) {
+  if (!_currentRunId) return;
+  $('btn-approve').disabled = true;
+  $('btn-reject').disabled  = true;
+
+  try {
+    const resp = await fetch(`/api/runs/${_currentRunId}/decision`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ decision }),
+    });
+    const d = await resp.json();
+    if (!resp.ok) {
+      alert(d.detail || 'Error processing decision');
+      return;
+    }
+
+    // Update trades table
+    const trades = d.trades || [];
+    let rows = '';
+    for (const t of trades) {
+      const settle = t.settlement === 'async'
+        ? '<span class="badge badge-async">async</span>'
+        : `<span class="badge badge-pass">${t.settlement||'sync'}</span>`;
+      rows += `<tr>
+        <td>${t.vault_id}</td>
+        <td>${t.action}</td>
+        <td>${(t.amount_usdc||0).toLocaleString()}</td>
+        <td>${settle}</td>
+        <td class="muted" style="font-size:.82rem">${t.note||''}</td>
+      </tr>`;
+    }
+    if (!rows) rows = '<tr><td colspan="5" class="muted">No trades required.</td></tr>';
+    $('trades-tbody').innerHTML = rows;
+    $('btn-approve').classList.add('hidden');
+    $('btn-reject').classList.add('hidden');
+
+    if (decision === 'approve' && d.execution) {
+      renderExecutionReport(d.execution);
+      show('section-execution');
+    }
+    loadHistory();
+  } catch(e) {
+    alert('Network error: ' + e.message);
+  } finally {
+    $('btn-approve').disabled = false;
+    $('btn-reject').disabled  = false;
+  }
+}
+
+function renderExecutionReport(exec) {
+  $('exec-content').innerHTML = `
+    <div class="warn-box" style="margin-bottom:10px">
+      <strong>${exec.label || 'SIMULATED'}</strong>
+    </div>
+    <p class="muted">${exec.summary || ''}</p>
+    ${exec.async_note ? `<p class="muted">${exec.async_note}</p>` : ''}
+    <details><summary class="muted" style="cursor:pointer">Raw JSON export</summary>
+      <pre>${JSON.stringify(exec, null, 2)}</pre>
+    </details>
+    <p style="margin-top:8px"><a href="/api/runs/${_currentRunId}" target="_blank">View full run JSON ↗</a></p>
+  `;
+}
+
+// ── Token counter ────────────────────────────────────────────────────────
+function updateTokenCounter(calls, tokens) {
+  show('token-counter');
+  $('stat-calls').textContent  = `calls: ${_totalCalls}`;
+  $('stat-tokens').textContent = `tokens: ${_totalTokens}`;
+}
+
+// ── Audit history ────────────────────────────────────────────────────────
+async function loadHistory() {
+  try {
+    const resp = await fetch('/api/runs');
+    const d = await resp.json();
+    const ul = $('history-list');
+    if (!d.runs || !d.runs.length) {
+      ul.innerHTML = '<li class="muted">No runs yet.</li>';
+      return;
+    }
+    ul.innerHTML = '';
+    for (const r of d.runs) {
+      const decBadge = r.decision === 'approved'
+        ? '<span class="badge badge-pass">approved</span>'
+        : r.decision === 'rejected'
+        ? '<span class="badge badge-fail">rejected</span>'
+        : '<span class="badge badge-simulated">pending</span>';
+      const verBadge = r.verified
+        ? '<span class="badge badge-pass">verified</span>'
+        : r.verified === false
+        ? '<span class="badge badge-fail">unverified</span>'
+        : '';
+      ul.insertAdjacentHTML('beforeend', `<li>
+        <span>
+          <a href="/api/runs/${r.id}" target="_blank">${r.id}</a>
+          ${verBadge} ${decBadge}
+          <span class="muted">· ${new Date(r.created_at).toLocaleTimeString()} · ${(r.amount_usdc||0).toLocaleString()} USDC · ${r.tokens||0} tok</span>
+        </span>
+      </li>`);
+    }
+  } catch(e) {
+    $('history-list').innerHTML = `<li class="muted">Could not load history: ${e.message}</li>`;
+  }
+}
+
+// ── Error helper ────────────────────────────────────────────────────────
+function showError(id, msg) {
+  const el = $(id);
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+// ── Reset ────────────────────────────────────────────────────────────────
+function reset() {
+  _currentRunId = null;
+  ['section-parsed','section-result','section-trades','section-execution'].forEach(hide);
+  $('btn-approve').classList.remove('hidden');
+  $('btn-reject').classList.remove('hidden');
+  $('policy-text').value = '';
+  $('result-content').innerHTML = '';
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────
+refreshBanner();
+loadHistory();
+</script>
 </body>
 </html>
