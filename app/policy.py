@@ -1,34 +1,43 @@
 """
 app/policy.py — plain-text policy → validated Policy model.
 
-parse_policy(text, client, call_counter) → Policy
+parse_policy(text, client, call_counter, max_calls, meta) → Policy
 
 The user's policy text is treated as DATA only. It is embedded inside a
 clearly delimited block in the user message so the model cannot mistake it
 for instructions. The system message (from prompts/policy_parse.md) tells
 the model to extract structured JSON from it.
 
-JSON repair: if the first response is not valid JSON we do one retry,
-sending the parse error back. If that also fails we raise PolicyParseError.
+JSON repair: if the first response is not valid JSON, or contains unknown
+keys after normalisation, we do one repair retry. If that also fails we
+raise PolicyParseError.
+
+Every SERV call is counted in call_counter and, if meta is supplied,
+accumulated into the Run's ModelMeta totals.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
 from app.models import Policy
 from app.serv_client import ServClient, ServResponse
 
+if TYPE_CHECKING:
+    from app.models import ModelMeta
+
 logger = logging.getLogger(__name__)
 
-# Load system prompt once at import time
 _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "policy_parse.md"
 _SYSTEM_PROMPT: str = _PROMPT_PATH.read_text(encoding="utf-8")
+
+# Canonical field names accepted by Policy
+_CANONICAL_KEYS = frozenset(Policy.model_fields.keys())
 
 
 class PolicyParseError(Exception):
@@ -39,107 +48,107 @@ class CallLimitError(Exception):
     """Raised when the SERV call cap for a Run would be exceeded."""
 
 
-def _load_json(text: str) -> dict:
-    """
-    Extract a JSON object from the model reply.
-    Handles both bare JSON and code-fenced JSON (```...```).
-    Also normalises key aliases the model sometimes uses.
-    """
-    stripped = text.strip()
-    # Strip optional ``` fences
-    if stripped.startswith("```"):
-        lines = stripped.splitlines()
-        # Remove first line (```json or ```) and last (```)
-        inner = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
-        stripped = inner.strip()
-    data = json.loads(stripped)
-    return _normalise_policy_keys(data)
+# ---------------------------------------------------------------------------
+# Key-alias normalisation (fallback only — canonical names preferred)
+# ---------------------------------------------------------------------------
 
-
-# Common aliases the model uses for policy keys
 _KEY_ALIASES: dict[str, str] = {
-    # max_per_vault aliases
     "max_vault_allocation": "max_per_vault",
     "max_allocation_per_vault": "max_per_vault",
     "max_single_vault": "max_per_vault",
     "max_per_vault_allocation": "max_per_vault",
     "max_weight_per_vault": "max_per_vault",
-    # min_liquid aliases
     "min_liquidity": "min_liquid",
     "min_liquid_fraction": "min_liquid",
     "min_liquid_ratio": "min_liquid",
     "liquidity_floor": "min_liquid",
     "min_redeemable": "min_liquid",
-    # liquid_days aliases
     "max_redemption_time": "liquid_days",
     "max_redemption_time_days": "liquid_days",
     "liquidity_window": "liquid_days",
     "liquid_window_days": "liquid_days",
     "redemption_window": "liquid_days",
     "liquid_within_days": "liquid_days",
-    # max_avg_risk aliases
     "max_average_risk": "max_avg_risk",
     "max_risk": "max_avg_risk",
     "average_risk_ceiling": "max_avg_risk",
     "risk_ceiling": "max_avg_risk",
     "max_risk_score": "max_avg_risk",
-    # min_avg_apy aliases
     "min_average_apy": "min_avg_apy",
     "min_apy": "min_avg_apy",
     "minimum_apy": "min_avg_apy",
     "min_yield": "min_avg_apy",
     "minimum_average_apy": "min_avg_apy",
-    # max_redemption_days aliases
     "max_lockup_days": "max_redemption_days",
     "max_lockup": "max_redemption_days",
     "max_delay_days": "max_redemption_days",
 }
 
 
-def _normalise_policy_keys(data: dict) -> dict:
-    """Replace known alias keys with the canonical Policy field names."""
-    result = {}
-    for k, v in data.items():
-        canonical = _KEY_ALIASES.get(k, k)
-        result[canonical] = v
-    return result
+def _normalise_policy_keys(data: dict) -> tuple[dict, list[str], list[str]]:
+    """
+    Normalise keys to canonical Policy field names.
 
+    Returns
+    -------
+    (normalised_dict, aliases_used, unknown_keys)
+    """
+    result: dict = {}
+    aliases_used: list[str] = []
+    unknown_keys: list[str] = []
+
+    for k, v in data.items():
+        if k in _CANONICAL_KEYS:
+            result[k] = v
+        elif k in _KEY_ALIASES:
+            canonical = _KEY_ALIASES[k]
+            result[canonical] = v
+            aliases_used.append(f"{k} → {canonical}")
+            logger.info("policy parse: alias used: %s → %s", k, canonical)
+        else:
+            unknown_keys.append(k)
+            logger.warning("policy parse: unknown key ignored: %r (value=%r)", k, v)
+
+    return result, aliases_used, unknown_keys
+
+
+def _load_and_normalise(text: str) -> tuple[dict, list[str], list[str]]:
+    """Parse JSON text and normalise keys. Returns (data, aliases_used, unknown_keys)."""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        inner = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
+        stripped = inner.strip()
+    data = json.loads(stripped)
+    return _normalise_policy_keys(data)
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
 
 def parse_policy(
     text: str,
     client: ServClient,
     call_counter: list[int],
     max_calls: int,
+    meta: "ModelMeta | None" = None,
 ) -> Policy:
     """
     Parse free-form policy text into a validated Policy.
 
     Parameters
     ----------
-    text:
-        The user's plain-language policy. Treated as data, not instructions.
-    client:
-        ServClient instance (may be offline stub).
-    call_counter:
-        Mutable single-element list tracking total SERV calls this Run.
-        Incremented here; checked against max_calls before each call.
-    max_calls:
-        Hard cap on total SERV calls for this Run.
+    text        : User's plain-language policy (treated as data only).
+    client      : ServClient instance (may be offline stub).
+    call_counter: [int] — incremented for every SERV call.
+    max_calls   : Hard cap.
+    meta        : Optional ModelMeta to accumulate token totals into.
 
     Returns
     -------
-    Policy
-        Validated policy. Missing fields use Policy defaults (no constraint).
-
-    Raises
-    ------
-    CallLimitError:
-        If the call cap would be exceeded.
-    PolicyParseError:
-        If the model returns invalid JSON after one repair retry, or if
-        pydantic validation fails with un-repairable data.
+    Policy with validated fields; missing fields use defaults (no constraint).
     """
-    # ── User message — policy text is DATA, delimited clearly ──────────
     user_msg = (
         "Extract the investment-policy constraints from the text below.\n\n"
         "--- POLICY TEXT BEGIN ---\n"
@@ -149,23 +158,25 @@ def parse_policy(
     )
 
     raw_json: dict | None = None
+    all_aliases: list[str] = []
     last_error: str = ""
+    last_raw: str = ""
 
-    for attempt in range(2):  # attempt 0 = first try; attempt 1 = repair retry
-        _check_and_increment(call_counter, max_calls, context="policy parse")
+    for attempt in range(2):  # 0 = first try; 1 = repair retry
+        _check_and_increment(call_counter, max_calls, "policy parse")
 
         if attempt == 0:
             messages = [{"role": "user", "content": user_msg}]
         else:
-            # Repair retry: send the parse error back
             messages = [
                 {"role": "user", "content": user_msg},
-                {"role": "assistant", "content": last_raw},  # type: ignore[name-defined]
+                {"role": "assistant", "content": last_raw},
                 {
                     "role": "user",
                     "content": (
-                        f"That response was not valid JSON. Error: {last_error}\n"
-                        "Please output only the corrected JSON object."
+                        f"That response had issues: {last_error}\n"
+                        "Please output only the corrected JSON object using "
+                        "EXACTLY the key names listed in the schema."
                     ),
                 },
             ]
@@ -175,39 +186,54 @@ def parse_policy(
             system=_SYSTEM_PROMPT,
             response_format={"type": "json_object"},
         )
-        _log_tokens(resp, call_counter[0])
-        last_raw = resp.content  # noqa: F841  (used in repair branch above)
+        _log_and_update(resp, call_counter[0], meta)
+        last_raw = resp.content
 
         try:
-            raw_json = _load_json(resp.content)
-            break
+            normalised, aliases, unknown = _load_and_normalise(resp.content)
+            all_aliases.extend(aliases)
         except (json.JSONDecodeError, ValueError) as exc:
-            last_error = str(exc)
-            logger.warning("policy parse: invalid JSON on attempt %d: %s", attempt + 1, exc)
+            last_error = f"invalid JSON: {exc}"
+            logger.warning("policy parse attempt %d: %s", attempt + 1, last_error)
             if attempt == 1:
                 raise PolicyParseError(
                     f"Policy parsing failed after repair retry. "
-                    f"Last model output: {resp.content!r}. "
-                    f"Parse error: {last_error}"
+                    f"Last output: {resp.content!r}. Error: {last_error}"
                 ) from exc
+            continue
+
+        if unknown and attempt == 0:
+            # Unknown keys after normalisation → repair retry
+            last_error = (
+                f"response contained unrecognised keys: {unknown}. "
+                f"Use only these key names: {sorted(_CANONICAL_KEYS)}"
+            )
+            logger.warning("policy parse attempt %d: %s", attempt + 1, last_error)
+            continue
+
+        # Drop the unknown keys silently on the repair attempt and proceed
+        raw_json = normalised
+        break
 
     assert raw_json is not None
 
-    # Drop unknown keys, validate with pydantic
     try:
         policy = Policy.model_validate(raw_json)
     except ValidationError as exc:
         raise PolicyParseError(
-            f"Policy JSON parsed but failed validation: {exc}\n"
-            f"Raw JSON: {raw_json}"
+            f"Policy JSON passed normalisation but failed pydantic validation: {exc}\n"
+            f"Raw: {raw_json}"
         ) from exc
+
+    if all_aliases:
+        logger.info("policy parse: aliases used this run: %s", all_aliases)
 
     logger.info("policy parsed: %s", policy.model_dump(exclude_defaults=True))
     return policy
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers shared with proposal.py
 # ---------------------------------------------------------------------------
 
 def _check_and_increment(counter: list[int], max_calls: int, context: str) -> None:
@@ -219,7 +245,8 @@ def _check_and_increment(counter: list[int], max_calls: int, context: str) -> No
     counter[0] += 1
 
 
-def _log_tokens(resp: ServResponse, call_number: int) -> None:
+def _log_and_update(resp: ServResponse, call_number: int, meta: "ModelMeta | None") -> None:
+    """Log token usage and accumulate into meta if provided."""
     logger.info(
         "SERV call #%d  model=%s  latency=%.0fms  "
         "prompt=%s completion=%s total=%s",
@@ -230,3 +257,21 @@ def _log_tokens(resp: ServResponse, call_number: int) -> None:
         resp.completion_tokens,
         resp.total_tokens,
     )
+    if meta is None:
+        return
+    meta.total_calls += 1
+    meta.latency_ms = resp.latency_ms
+    meta.model = resp.model
+    if resp.prompt_tokens is not None:
+        meta.run_prompt_tokens += resp.prompt_tokens
+        meta.prompt_tokens = resp.prompt_tokens
+    if resp.completion_tokens is not None:
+        meta.run_completion_tokens += resp.completion_tokens
+        meta.completion_tokens = resp.completion_tokens
+    if resp.total_tokens is not None:
+        meta.run_total_tokens += resp.total_tokens
+        meta.total_tokens = resp.total_tokens
+
+
+# Keep old name for backward compat with any callers that imported it
+_log_tokens = _log_and_update

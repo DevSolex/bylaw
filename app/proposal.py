@@ -5,18 +5,13 @@ propose(policy, vaults, amount_usdc, holdings, client, call_counter, max_calls)
     → (RunFinal, list[Attempt], ModelMeta)
 
 Flow (spec §5.2):
-  1. Check feasibility first. If infeasible, skip the model entirely.
+  1. Check feasibility first (exact LP + grid). If infeasible, skip model.
   2. Ask SERV for a JSON allocation (up to 3 attempts).
-  3. After each attempt, run the verifier.
-  4. If the verifier passes → return the allocation as verified.
-  5. If the verifier fails → pass the problem list back in the next prompt.
-  6. If all 3 attempts fail → return verified=False with the last problems.
+  3. After each attempt run the verifier; failures feed back as problems.
+  4. All 3 fail → RunFinal(verified=False).
 
-All SERV calls go through ServClient which enforces the system message,
-uses max_completion_tokens, and never sends temperature.
-
-Policy text and vault data are embedded as DATA in delimited blocks —
-never as instructions to the model.
+All SERV calls — including the policy-parse call done before propose() is
+called — share the same call_counter and ModelMeta so the Run total is exact.
 """
 
 from __future__ import annotations
@@ -38,7 +33,7 @@ from app.models import (
     Vault,
     VerifierResult,
 )
-from app.policy import CallLimitError, _check_and_increment, _log_tokens
+from app.policy import CallLimitError, _check_and_increment, _log_and_update
 from app.serv_client import ServClient, ServResponse
 from app.verifier import check_feasibility, verify
 
@@ -50,8 +45,11 @@ _SYSTEM_PROMPT: str = _PROMPT_PATH.read_text(encoding="utf-8")
 _MAX_ATTEMPTS = 3
 
 
+# ---------------------------------------------------------------------------
+# Prompt helpers
+# ---------------------------------------------------------------------------
+
 def _vault_summary(vaults: list[Vault]) -> str:
-    """Compact JSON representation of vaults — embedded as DATA in the prompt."""
     rows = []
     for v in vaults:
         rows.append({
@@ -104,17 +102,18 @@ def _build_user_message(
     return "\n".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# Proposal parser (normalises alternate model output shapes)
+# ---------------------------------------------------------------------------
+
 def _parse_proposal(raw: str) -> Proposal:
     """
-    Parse the model reply into a Proposal.
+    Parse model reply into a Proposal.
+
     Handles bare JSON and ```-fenced JSON.
-
-    Also normalises two alternate shapes the model sometimes emits:
-      {"allocations": [{"vault_id": "x", "weight": 0.5}, ...], "rationale": "..."}
-      {"allocation": [{"vault_id": "x", "weight": 0.5}, ...], "rationale": "..."}
-    Both are converted to {"allocation": {"x": 0.5, ...}, "rationale": "..."}
-
-    Raises ValueError on parse failure, ValidationError on schema failure.
+    Normalises list-of-dicts shapes:
+      {"allocations": [{"vault_id": "x", "weight": 0.5}], ...}
+      {"allocation": [{"vault_id": "x", "weight": 0.5}], ...}
     """
     stripped = raw.strip()
     if stripped.startswith("```"):
@@ -123,21 +122,23 @@ def _parse_proposal(raw: str) -> Proposal:
         stripped = inner.strip()
     data = json.loads(stripped)
 
-    # Normalise list-of-dicts allocation shapes
     alloc = data.get("allocation") or data.get("allocations")
     if isinstance(alloc, list):
-        # Each element: {"vault_id": "x", "weight": 0.5} or {"id": "x", "weight": 0.5}
-        normalized: dict[str, float] = {}
+        normalised: dict[str, float] = {}
         for item in alloc:
             vid = item.get("vault_id") or item.get("id")
             weight = item.get("weight") or item.get("amount_usdc") or 0.0
             if vid:
-                normalized[str(vid)] = float(weight)
-        data["allocation"] = normalized
+                normalised[str(vid)] = float(weight)
+        data["allocation"] = normalised
         data.pop("allocations", None)
 
     return Proposal.model_validate(data)
 
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
 
 def propose(
     policy: Policy,
@@ -147,49 +148,33 @@ def propose(
     client: ServClient,
     call_counter: list[int],
     max_calls: int,
+    meta: ModelMeta | None = None,
 ) -> tuple[RunFinal, list[Attempt], ModelMeta]:
     """
     Run the full propose-verify loop.
 
-    Returns
-    -------
-    (RunFinal, attempts, model_meta)
-        RunFinal.verified is True only if a proposal passed the verifier.
-        attempts contains every model call and verifier verdict.
-        model_meta contains per-run token totals.
+    call_counter and meta are shared with parse_policy so the Run's SERV
+    call count and token total include the policy-parse call(s).
+
+    Returns (RunFinal, attempts, meta).
+    RunFinal.verified is True only if a proposal passed the verifier.
     """
+    if meta is None:
+        meta = ModelMeta(
+            model=client.model,
+            total_calls=0,
+            run_prompt_tokens=0,
+            run_completion_tokens=0,
+            run_total_tokens=0,
+        )
+
     attempts: list[Attempt] = []
-    meta = ModelMeta(
-        model=client.model,
-        total_calls=0,
-        run_prompt_tokens=0,
-        run_completion_tokens=0,
-        run_total_tokens=0,
-    )
 
-    def _update_meta(resp: ServResponse) -> None:
-        meta.total_calls += 1
-        meta.latency_ms = resp.latency_ms
-        if resp.prompt_tokens is not None:
-            meta.run_prompt_tokens += resp.prompt_tokens
-            meta.prompt_tokens = resp.prompt_tokens
-        if resp.completion_tokens is not None:
-            meta.run_completion_tokens += resp.completion_tokens
-            meta.completion_tokens = resp.completion_tokens
-        if resp.total_tokens is not None:
-            meta.run_total_tokens += resp.total_tokens
-            meta.total_tokens = resp.total_tokens
-        meta.model = resp.model
-
-    # ── 1. Feasibility check — skip model if impossible ────────────────
+    # ── 1. Feasibility check ───────────────────────────────────────────
     feasibility: FeasibilityResult = check_feasibility(policy, vaults, amount_usdc)
     if not feasibility.feasible:
-        logger.info("proposal: infeasible — skipping model. reason: %s", feasibility.reason)
-        return (
-            RunFinal(verified=False, reason=feasibility.reason),
-            attempts,
-            meta,
-        )
+        logger.info("proposal: infeasible — %s", feasibility.reason)
+        return RunFinal(verified=False, reason=feasibility.reason), attempts, meta
 
     # ── 2. Proposal loop ───────────────────────────────────────────────
     previous_problems: list[str] = []
@@ -215,24 +200,23 @@ def propose(
             messages=[{"role": "user", "content": user_msg}],
             system=_SYSTEM_PROMPT,
             response_format={"type": "json_object"},
+            _stub_vaults=vaults,
         )
-        _update_meta(resp)
-        _log_tokens(resp, call_counter[0])
+        _log_and_update(resp, call_counter[0], meta)
         logger.info(
-            "proposal: running token total  prompt=%d completion=%d total=%d",
+            "proposal: running totals  calls=%d prompt=%d completion=%d total=%d",
+            meta.total_calls,
             meta.run_prompt_tokens,
             meta.run_completion_tokens,
             meta.run_total_tokens,
         )
 
-        # Parse the proposal
+        # Parse
         try:
             proposal = _parse_proposal(resp.content)
         except (json.JSONDecodeError, ValidationError, ValueError) as exc:
             logger.warning("proposal attempt %d: parse error: %s", attempt_num, exc)
-            # Count as a failed attempt; pass error as a problem to retry
             previous_problems = [f"Your response was not valid JSON: {exc}"]
-            # No Attempt recorded when parse completely fails
             continue
 
         # Verify
@@ -254,12 +238,11 @@ def propose(
 
         logger.info(
             "proposal: attempt %d failed verification: %s",
-            attempt_num,
-            result.problems,
+            attempt_num, result.problems,
         )
         previous_problems = result.problems
 
-    # ── All attempts exhausted ─────────────────────────────────────────
+    # All attempts exhausted
     last_problems = last_verifier_result.problems if last_verifier_result else previous_problems
     reason = (
         f"All {_MAX_ATTEMPTS} proposal attempts failed verification. "

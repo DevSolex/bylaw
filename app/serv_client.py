@@ -68,32 +68,57 @@ class ServResponse:
 
 
 # ---------------------------------------------------------------------------
-# Offline stub
+# Offline stub helpers
 # ---------------------------------------------------------------------------
 
 _STUB_POLICY_JSON = (
     '{"max_per_vault": 0.4, "min_liquid": 0.2, "liquid_days": 1, '
-    '"max_avg_risk": 3.0, "min_avg_apy": null, '
-    '"max_redemption_days": null, "excluded_vault_ids": []}'
-)
-
-_STUB_PROPOSAL_JSON = (
-    '{"allocation": {"mock-tbill": 0.5, "mock-bond": 0.3, "mock-credit": 0.2}, '
-    '"rationale": "[OFFLINE STUB] Allocated 50% to T-bill vault (risk 1, instant), '
-    '30% to bond vault (risk 2, 3 days), 20% to private credit (risk 4, 30 days). '
-    'Weighted avg risk = 2.1, within the 3.0 ceiling."}'
+    '"max_avg_risk": 3.0}'
 )
 
 
-def _make_stub(model: str, latency_ms: float = 50.0) -> ServResponse:
-    """Return a deterministic offline stub that passes the verifier for mock vaults."""
+def _make_stub_proposal(vaults: list | None, model: str, latency_ms: float = 50.0) -> ServResponse:
+    """
+    Build a deterministic offline proposal from whatever vaults are supplied.
+    No hardcoded vault IDs.
+
+    Strategy: give equal weight to non-paused vaults, capped so no single
+    vault exceeds 0.5.  If no vaults supplied, returns an empty allocation.
+    """
+    import json as _json
+
+    active = [v for v in (vaults or []) if not getattr(v, "paused", False)]
+    if not active:
+        alloc: dict[str, float] = {}
+    else:
+        n = len(active)
+        raw_w = 1.0 / n
+        # Cap each at 0.5 to avoid trivial per-vault violations
+        w = min(raw_w, 0.5)
+        alloc = {v.id: round(w, 4) for v in active}
+        # Normalise to sum exactly to 1.0
+        total = sum(alloc.values())
+        if total > 0:
+            alloc = {k: round(v / total, 6) for k, v in alloc.items()}
+
+    names = ", ".join(
+        f"{v.id} (risk {v.risk}, redemption {v.redemption_days}d)"
+        for v in active[:3]
+    )
+    content = _json.dumps({
+        "allocation": alloc,
+        "rationale": (
+            f"[OFFLINE STUB] Equal-weight allocation across {len(active)} active vault(s): "
+            f"{names}. Weights normalised to 1.0."
+        ),
+    })
     return ServResponse(
-        content=_STUB_PROPOSAL_JSON,
+        content=content,
         model=model,
         latency_ms=latency_ms,
-        prompt_tokens=0,
-        completion_tokens=0,
-        total_tokens=0,
+        prompt_tokens=10,
+        completion_tokens=10,
+        total_tokens=20,
         stubbed=True,
     )
 
@@ -103,6 +128,9 @@ def _make_policy_stub(model: str) -> ServResponse:
         content=_STUB_POLICY_JSON,
         model=model,
         latency_ms=50.0,
+        prompt_tokens=10,
+        completion_tokens=10,
+        total_tokens=20,
         stubbed=True,
     )
 
@@ -163,6 +191,7 @@ class ServClient:
         system: str | None = None,
         max_completion_tokens: int = 2048,
         response_format: dict | None = None,
+        _stub_vaults: list | None = None,   # passed by proposal.py for dynamic stub
     ) -> ServResponse:
         """
         Send a chat-completion request to SERV.
@@ -199,7 +228,7 @@ class ServClient:
         # ── Offline stub ───────────────────────────────────────────────
         if self._offline:
             logger.debug("ServClient: offline stub (OFFLINE_DEMO=1)")
-            return _make_stub(self._model)
+            return _make_stub_proposal(_stub_vaults, self._model)
 
         # ── Build message list ─────────────────────────────────────────
         system_content = system or _DEFAULT_SYSTEM
