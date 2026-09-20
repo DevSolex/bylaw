@@ -1,0 +1,30 @@
+# Dependency versions pinned at build time (2026-09-19).
+# Update versions only when there is a reason; keep the image small.
+
+# Web framework
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+
+# Data validation
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# OpenAI-compatible client (used for SERV)
+openai==1.51.0
+
+# HTTP client (used by adapters and for mocked tests)
+httpx==0.27.2
+
+# YAML (curated vault config)
+pyyaml==6.0.2
+
+# Testing
+pytest==8.3.3
+pytest-asyncio==0.24.0
+respx==0.21.1          # mock httpx requests in tests
+
+# Optional — uncomment if feasibility check uses scipy
+# scipy==1.14.1
+
+# Optional — uncomment if on-chain reads are needed via web3
+# web3==7.3.0
