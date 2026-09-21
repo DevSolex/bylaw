@@ -124,8 +124,8 @@
     <div id="ixs-unavailable" class="warn-box hidden"></div>
     <table id="vault-table">
       <thead><tr>
-        <th>Vault</th><th>Chain</th><th>APY</th><th>Redeem</th>
-        <th>Risk</th><th>Settlement</th><th>Paused</th><th>Sources</th>
+        <th>Vault</th><th>APY</th><th>Redeem</th>
+        <th>Risk</th><th>Settlement</th><th>Status</th><th>TVL</th>
       </tr></thead>
       <tbody id="vault-tbody"></tbody>
     </table>
@@ -147,6 +147,7 @@
     </table>
     <div style="margin-top:14px; display:flex; gap:10px;">
       <button class="btn-approve" id="btn-approve" onclick="doDecision('approve')">✓ Approve</button>
+      <button class="btn-ghost"   id="btn-adjust"  onclick="doAdjust()">✎ Adjust policy</button>
       <button class="btn-reject"  id="btn-reject"  onclick="doDecision('reject')">✗ Reject</button>
       <button class="btn-ghost"   onclick="reset()">Start over</button>
     </div>
@@ -222,28 +223,55 @@ function renderVaultTable(vaults) {
   const tbody = $('vault-tbody');
   tbody.innerHTML = '';
   for (const v of vaults) {
-    const srcBadge = (field) => {
-      const s = (v.data_sources || {})[field] || 'simulated';
-      return `<span class="badge badge-${s}">${s}</span>`;
-    };
-    const apy = v.apy != null ? (v.apy * 100).toFixed(1) + '%' : '<span class="muted">n/a</span>';
-    const rd = v.redemption_days != null ? (v.redemption_days === 0 ? 'instant' : v.redemption_days + 'd') : '?';
-    const paused = v.paused ? '<span class="badge badge-fail">PAUSED</span>' : '<span class="badge badge-pass">active</span>';
+    const src = (field) => (v.data_sources || {})[field] || 'simulated';
+    const srcBadge = (field) => `<span class="badge badge-${src(field)}">${src(field)}</span>`;
+
+    // APY: show label if indicative
+    let apyHtml;
+    if (v.apy != null) {
+      const apyPct = (v.apy * 100).toFixed(2) + '%';
+      if (v.apy_label) {
+        apyHtml = `${apyPct} ${srcBadge('apy')}<br><span class="muted" style="font-size:.75rem" title="${v.apy_label}">⚠ indicative</span>`;
+      } else {
+        apyHtml = `${apyPct} ${srcBadge('apy')}`;
+      }
+    } else {
+      apyHtml = `<span class="muted">n/a</span> ${srcBadge('apy')}`;
+    }
+
+    const rd = v.redemption_days != null
+      ? (v.redemption_days === 0 ? 'instant' : v.redemption_days + 'd')
+      : '?';
+    const paused = v.paused
+      ? '<span class="badge badge-fail">PAUSED</span>'
+      : '<span class="badge badge-pass">active</span>';
     const settle = v.settlement === 'async'
       ? '<span class="badge badge-async">async</span>'
-      : `<span class="badge badge-pass">${v.settlement||'?'}</span>`;
-    const sources = [...new Set(Object.values(v.data_sources || {}))].map(s =>
-      `<span class="badge badge-${s}">${s}</span>`).join(' ');
+      : `<span class="badge badge-pass">${v.settlement || '?'}</span>`;
+
+    // Per-field source badges for live vs curated split
+    const pausedSrc = srcBadge('paused');
+    const tvlSrc    = srcBadge('available_liquidity_usdc');
+    const rdSrc     = srcBadge('redemption_days');
+    const riskSrc   = srcBadge('risk');
+
+    const tvl = v.available_liquidity_usdc != null
+      ? `${v.available_liquidity_usdc.toLocaleString(undefined, {maximumFractionDigits:1})} ${v.asset} ${tvlSrc}`
+      : `<span class="muted">n/a</span> ${tvlSrc}`;
+
     const riskColor = v.risk <= 2 ? '#16a34a' : v.risk <= 3 ? '#d97706' : '#dc2626';
+
     tbody.insertAdjacentHTML('beforeend', `<tr>
-      <td><strong>${v.name}</strong><br><span class="muted" style="font-size:.8rem">${v.id}</span></td>
-      <td>${v.chain}</td>
-      <td>${apy}</td>
-      <td>${rd}</td>
-      <td><span style="color:${riskColor};font-weight:700">${v.risk}</span></td>
+      <td>
+        <strong>${v.name}</strong><br>
+        <span class="muted" style="font-size:.78rem">${v.id} · ${v.chain}</span>
+      </td>
+      <td>${apyHtml}</td>
+      <td>${rd} ${rdSrc}</td>
+      <td><span style="color:${riskColor};font-weight:700">${v.risk}</span> ${riskSrc}</td>
       <td>${settle}</td>
-      <td>${paused}</td>
-      <td>${sources}</td>
+      <td>${paused} ${pausedSrc}</td>
+      <td style="font-size:.82rem">${tvl}</td>
     </tr>`);
   }
 }
@@ -367,23 +395,35 @@ function renderVerifiedResult(d) {
   for (const [vid, w] of Object.entries(alloc)) {
     const vault = _currentVaults.find(v => v.id === vid) || {name: vid};
     const pct = (w * 100).toFixed(1);
+    // Show APY label if indicative
+    const apyNote = vault.apy_label
+      ? `<br><span class="muted" style="font-size:.73rem" title="${vault.apy_label}">⚠ indicative APY</span>`
+      : '';
+    const apyStr = vault.apy != null ? ` · ${(vault.apy*100).toFixed(2)}%${apyNote}` : '';
     allocRows += `<tr>
-      <td>${vault.name || vid}</td>
+      <td>${vault.name || vid}${apyStr}</td>
       <td>${pct}%</td>
       <td><div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div></td>
     </tr>`;
   }
 
   let checklistHtml = '';
-  for (const attempt of (d.verifier_checklist || [])) {
+  for (const [i, attempt] of (d.verifier_checklist || []).entries()) {
     const status = attempt.passed ? '<span class="badge badge-pass">PASS</span>' : '<span class="badge badge-fail">FAIL</span>';
-    checklistHtml += `<details style="margin-bottom:6px;"><summary>${status} Attempt verified=${attempt.passed}</summary>`;
+    checklistHtml += `<details style="margin-bottom:6px;"><summary>${status} Attempt ${i+1}</summary>`;
     for (const rule of (attempt.checklist || [])) {
       const rb = rule.passed ? '<span class="badge badge-pass">✓</span>' : '<span class="badge badge-fail">✗</span>';
-      checklistHtml += `<div style="padding:3px 0 3px 12px">${rb} <strong>${rule.rule}</strong> ${rule.detail ? '— ' + rule.detail : ''}</div>`;
+      checklistHtml += `<div style="padding:3px 0 3px 12px">${rb} <strong>${rule.rule}</strong>${rule.detail ? ' — ' + rule.detail : ''}</div>`;
     }
     checklistHtml += '</details>';
   }
+
+  // Per-step token breakdown
+  let stepsHtml = '';
+  for (const s of (d.steps || [])) {
+    stepsHtml += `<span class="stat">${s.step}: ${s.total_tokens} tok</span>`;
+  }
+  if (!stepsHtml) stepsHtml = '';
 
   $('result-content').innerHTML = `
     <table style="margin-bottom:12px">
@@ -396,17 +436,18 @@ function renderVerifiedResult(d) {
     </details>
     <div class="muted" style="margin-top:8px;font-size:.82rem">
       <span class="stat">SERV calls: ${d.serv_calls}</span>
-      <span class="stat">Tokens: ${(d.tokens||{}).total || 0}</span>
+      <span class="stat">Tokens total: ${(d.tokens||{}).total || 0}</span>
       <span class="stat">Mode: ${d.data_mode}</span>
+      ${stepsHtml}
     </div>
   `;
 
-  // Populate trades table and show decision section
   renderTradesSection(d);
   show('section-trades');
 }
 
 function renderUnverifiedResult(d) {
+  let stepsHtml = (d.steps||[]).map(s => `<span class="stat">${s.step}: ${s.total_tokens} tok</span>`).join('');
   $('result-content').innerHTML = `
     <div class="error" style="margin-bottom:8px;">
       <strong>Allocation not verified</strong><br>${d.reason || 'No valid allocation could be found.'}
@@ -414,6 +455,7 @@ function renderUnverifiedResult(d) {
     <div class="muted" style="font-size:.82rem">
       <span class="stat">SERV calls: ${d.serv_calls}</span>
       <span class="stat">Tokens: ${(d.tokens||{}).total || 0}</span>
+      ${stepsHtml}
     </div>
   `;
   hide('section-trades');
@@ -529,6 +571,20 @@ async function loadHistory() {
   } catch(e) {
     $('history-list').innerHTML = `<li class="muted">Could not load history: ${e.message}</li>`;
   }
+}
+
+// ── Adjust policy ───────────────────────────────────────────────────────
+function doAdjust() {
+  // Scroll back to policy box and let the user re-type, keeping current text
+  hide('section-trades');
+  hide('section-result');
+  hide('section-parsed');
+  hide('section-execution');
+  $('btn-approve').classList.remove('hidden');
+  $('btn-reject').classList.remove('hidden');
+  $('btn-adjust').classList.remove('hidden');
+  $('policy-text').focus();
+  $('section-policy').scrollIntoView({behavior: 'smooth'});
 }
 
 // ── Error helper ────────────────────────────────────────────────────────

@@ -165,7 +165,10 @@ def api_propose(req: ProposeRequest):
     # Capacity warnings
     cap_warns: list[dict] = []
     if final.verified and final.allocation:
-        cap_warns = capacity_warnings(final.allocation, req.amount_usdc, vaults)
+        cap_warns = capacity_warnings(
+            final.allocation, req.amount_usdc, vaults,
+            warn_share=settings.capacity_warn_share,
+        )
 
     # Build run record
     run = Run(
@@ -202,6 +205,7 @@ def api_propose(req: ProposeRequest):
             "completion": meta.run_completion_tokens,
             "total": meta.run_total_tokens,
         },
+        "steps": [s.model_dump() for s in meta.steps],
         "data_mode": settings.data_mode,
         "offline_demo": settings.offline_demo,
         "banner": _build_banner(vaults),
