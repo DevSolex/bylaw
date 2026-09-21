@@ -197,11 +197,15 @@ class TestIXSAdapter:
         for label in vaults[0].data_sources.values():
             assert label == "curated"
 
-    def test_apy_is_none_live(self):
-        """APY must be None for live reads — no confirmed source."""
+    def test_apy_is_curated_not_live(self):
+        """APY for IXS is curated (indicative ETF figure), not a live read."""
         with self._live():
             v = IXSAdapter().list_vaults()[0]
-        assert v.apy is None
+        # APY source must be curated, not live
+        assert v.data_sources.get("apy") == "curated"
+        # apy_label must be set to the indicative disclaimer
+        assert v.apy_label is not None
+        assert "indicative" in v.apy_label.lower()
 
 
 # ---------------------------------------------------------------------------
