@@ -30,6 +30,7 @@ def _parse_vault(raw: dict, fetched_at: datetime) -> Vault | None:
             chain=raw["chain"],
             asset=raw.get("asset", "USDC"),
             apy=raw.get("apy"),
+            apy_label=raw.get("apy_label"),
             redemption_days=raw.get("redemption_days"),
             settlement=_SETTLEMENT_MAP.get(raw.get("settlement", ""), None),
             risk=raw["risk"],

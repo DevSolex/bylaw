@@ -243,7 +243,9 @@ class IXSAdapter(VaultAdapter):
             name="IXS RWA Permissionless Vault",
             chain="bsc",
             asset=r["asset_sym"] or "USDC",
-            apy=_INDICATIVE_APY,                               # None until confirmed
+            apy=baseline.apy if baseline else None,
+            apy_label=(baseline.apy_label if baseline else
+                       "indicative: underlying ETF yield, not realized by the vault"),
             redemption_days=baseline.redemption_days if baseline else 5,
             settlement="async",
             risk=baseline.risk if baseline else 4,

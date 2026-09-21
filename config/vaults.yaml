@@ -39,8 +39,28 @@ vaults:
     contract_address: "0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82"
 
     # Live fields read from BNB RPC (paused, total_assets) — fall back to curated
-    apy: null
-    apy_note: "no confirmed live source; compass endpoint not available"
+    # Confirmed on-chain 2026-09-20:
+    #   asset()          = 0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d (USDC on BSC)
+    #   asset.decimals() = 18  (BSC USDC uses 18 decimals)
+    #   asset.symbol()   = "USDC"
+    #   vault.symbol()   = "ixv1"
+    #   totalAssets()    = 654.372320 USDC
+    #   pricePerShare()  = 1.08859600 USDC/share (yield accrued since inception)
+
+    # Indicative APY — NOT the vault's realised yield
+    # Source: iShares SHYG (0-5yr High Yield Corporate Bond ETF) 30-day SEC yield
+    # URL: https://www.ishares.com/us/products/258100/ishares-05-year-high-yield-corporate-bond-etf
+    # As of: 2026-09-17  |  30-day SEC yield: 6.72%  |  12m trailing yield: 7.07%
+    # Expense ratio: 0.30%  (drag on net return)
+    # This figure is the underlying ETF yield used as an indicative benchmark.
+    # It is NOT the return realised by the IXS vault. Archive reads are unavailable
+    # on the public BSC RPC so trailing vault yield cannot be derived on-chain.
+    # Label shown in UI: "indicative: underlying ETF yield, not realized by the vault"
+    apy: 0.0672
+    apy_label: "indicative: underlying ETF yield, not realized by the vault"
+    apy_note: "iShares SHYG 30-day SEC yield 6.72% as of 2026-09-17. 12m trailing: 7.07%, expense ratio: 0.30%. Source: https://www.ishares.com/us/products/258100"
+    apy_as_of: "2026-09-17"
+
     redemption_days: 5
     redemption_note: "async ERC-7540; ~3-7 business day estimate (assumption — see findings.md)"
     settlement: "async"
