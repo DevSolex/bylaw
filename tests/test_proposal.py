@@ -27,11 +27,11 @@ _NOW = datetime(2026, 9, 20, tzinfo=timezone.utc)
 
 
 def make_vault(id, risk=2, apy=0.06, redemption_days=1, paused=False,
-               available_liquidity_usdc=None):
+               total_assets_usdc=None):
     return Vault(
         id=id, name=id, chain="ethereum", asset="USDC",
         apy=apy, redemption_days=redemption_days, risk=risk,
-        paused=paused, available_liquidity_usdc=available_liquidity_usdc,
+        paused=paused, total_assets_usdc=total_assets_usdc,
         fetched_at=_NOW,
     )
 

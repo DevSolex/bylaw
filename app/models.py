@@ -29,12 +29,24 @@ class Vault(BaseModel):
     asset: str  # e.g. "USDC"
 
     apy: float | None = None                        # fraction; 0.07 == 7%
-    apy_label: str | None = None                    # e.g. "indicative: underlying ETF yield, not realized"
+    apy_label: str | None = None                    # "indicative: …" when not realized
     redemption_days: int | None = None              # 0 means instant
     settlement: Literal["sync", "async"] | None = None
     risk: int = Field(..., ge=1, le=5)              # 1 lowest, 5 highest
     paused: bool | None = None
-    available_liquidity_usdc: float | None = None
+
+    # totalAssets() on-chain — stored read-only; never used to imply availableAssets
+    # (availableAssets() reverts on the IXS contract — see docs/findings.md)
+    total_assets_usdc: float | None = None
+
+    # pricePerShare() on-chain — stored for audit; yield NOT derived from it
+    price_per_share: float | None = None
+
+    # Timestamp of the live RPC read (None if all fields are curated/simulated)
+    live_read_at: datetime | None = None
+
+    # as_of: the date of the curated snapshot this record is based on
+    as_of: str | None = None
 
     # One entry per field above; keys match field names
     data_sources: dict[str, SourceLabel] = Field(default_factory=dict)

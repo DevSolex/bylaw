@@ -1,0 +1,2 @@
+# Keep the data directory (runtime audit log) under version control
+# but never commit its contents. docker-compose mounts ./data:/app/data.

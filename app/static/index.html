@@ -177,6 +177,7 @@ const PRESETS = [
 
 let _currentRunId = null;
 let _currentVaults = [];
+let _lastAllocation = null;
 let _totalCalls = 0;
 let _totalTokens = 0;
 
@@ -251,13 +252,18 @@ function renderVaultTable(vaults) {
 
     // Per-field source badges for live vs curated split
     const pausedSrc = srcBadge('paused');
-    const tvlSrc    = srcBadge('available_liquidity_usdc');
+    const tvlSrc    = srcBadge('total_assets_usdc');
     const rdSrc     = srcBadge('redemption_days');
     const riskSrc   = srcBadge('risk');
 
-    const tvl = v.available_liquidity_usdc != null
-      ? `${v.available_liquidity_usdc.toLocaleString(undefined, {maximumFractionDigits:1})} ${v.asset} ${tvlSrc}`
-      : `<span class="muted">n/a</span> ${tvlSrc}`;
+    const tvl = v.total_assets_usdc != null
+      ? `${v.total_assets_usdc.toLocaleString(undefined, {maximumFractionDigits:1})} ${v.asset} ${tvlSrc}`
+      : `<span class="muted">n/a</span>`;
+
+    const asOf   = v.as_of ? `<br><span class="muted" style="font-size:.72rem">as-of ${v.as_of}</span>` : '';
+    const liveAt = v.live_read_at
+      ? `<br><span class="muted" style="font-size:.72rem">⬤ read ${new Date(v.live_read_at).toLocaleTimeString()}</span>`
+      : '';
 
     const riskColor = v.risk <= 2 ? '#16a34a' : v.risk <= 3 ? '#d97706' : '#dc2626';
 
@@ -265,6 +271,7 @@ function renderVaultTable(vaults) {
       <td>
         <strong>${v.name}</strong><br>
         <span class="muted" style="font-size:.78rem">${v.id} · ${v.chain}</span>
+        ${asOf}${liveAt}
       </td>
       <td>${apyHtml}</td>
       <td>${rd} ${rdSrc}</td>
@@ -443,6 +450,7 @@ function renderVerifiedResult(d) {
   `;
 
   renderTradesSection(d);
+  _lastAllocation = d.allocation;
   show('section-trades');
 }
 
@@ -575,16 +583,94 @@ async function loadHistory() {
 
 // ── Adjust policy ───────────────────────────────────────────────────────
 function doAdjust() {
-  // Scroll back to policy box and let the user re-type, keeping current text
-  hide('section-trades');
-  hide('section-result');
-  hide('section-parsed');
-  hide('section-execution');
-  $('btn-approve').classList.remove('hidden');
-  $('btn-reject').classList.remove('hidden');
-  $('btn-adjust').classList.remove('hidden');
-  $('policy-text').focus();
-  $('section-policy').scrollIntoView({behavior: 'smooth'});
+  // Show the weight-editor form inline in the trades section
+  const alloc = _lastAllocation;
+  if (alloc) {
+    buildAdjustForm(alloc);
+    $('section-trades').scrollIntoView({behavior: 'smooth'});
+  } else {
+    // No allocation yet — scroll back to policy
+    hide('section-trades');
+    hide('section-result');
+    hide('section-parsed');
+    hide('section-execution');
+    $('policy-text').focus();
+    $('section-policy').scrollIntoView({behavior: 'smooth'});
+  }
+}
+
+// ── Manual weight adjustment ─────────────────────────────────────────────
+function buildAdjustForm(allocation) {
+  if (!_currentRunId || !allocation) return;
+  const section = $('section-trades');
+  // Remove existing adjust form if any
+  const existing = document.getElementById('adjust-form');
+  if (existing) existing.remove();
+
+  let inputs = '';
+  for (const [vid, w] of Object.entries(allocation)) {
+    const vname = (_currentVaults.find(v => v.id === vid) || {name: vid}).name;
+    inputs += `<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+      <span style="min-width:200px;font-size:.9rem">${vname}</span>
+      <input type="number" id="adj_${vid}" value="${(w*100).toFixed(1)}"
+             min="0" max="100" step="0.1" style="width:80px"/>
+      <span class="muted">%</span>
+    </div>`;
+  }
+  const formHtml = `<div id="adjust-form" style="margin-top:14px;padding:12px;background:#f8f9fc;border-radius:6px;border:1px solid var(--border)">
+    <strong style="font-size:.9rem">Adjust weights manually (must sum to 100%)</strong>
+    <div style="margin-top:10px">${inputs}</div>
+    <div style="margin-top:8px;display:flex;gap:8px;">
+      <button class="btn-primary" style="font-size:.85rem;padding:6px 14px" onclick="submitAdjust()">Re-verify</button>
+      <button class="btn-ghost"   style="font-size:.85rem;padding:6px 14px" onclick="document.getElementById('adjust-form').remove()">Cancel</button>
+    </div>
+    <div id="adjust-result" style="margin-top:8px"></div>
+  </div>`;
+  section.insertAdjacentHTML('beforeend', formHtml);
+}
+
+async function submitAdjust() {
+  if (!_currentRunId) return;
+  const form = document.getElementById('adjust-form');
+  const inputs = form.querySelectorAll('input[type=number]');
+  const alloc = {};
+  let total = 0;
+  for (const inp of inputs) {
+    const vid = inp.id.replace('adj_', '');
+    const pct = parseFloat(inp.value) || 0;
+    alloc[vid] = parseFloat((pct / 100).toFixed(6));
+    total += pct;
+  }
+  const resDiv = document.getElementById('adjust-result');
+  if (Math.abs(total - 100) > 0.11) {
+    resDiv.innerHTML = `<span class="error">Weights sum to ${total.toFixed(1)}% — must be 100%.</span>`;
+    return;
+  }
+  resDiv.innerHTML = '<span class="muted"><span class="spinner"></span>Re-verifying…</span>';
+  try {
+    const resp = await fetch(`/api/runs/${_currentRunId}/adjust`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({allocation: alloc}),
+    });
+    const d = await resp.json();
+    if (d.verified) {
+      resDiv.innerHTML = '<span class="badge badge-pass">✓ Verified — click Approve to continue</span>';
+      // Update the allocation display
+      const tbody = $('trades-tbody');
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">Trades will be computed on approval.</td></tr>';
+    } else {
+      let problems = (d.problems || []).map(p => `<li>${p}</li>`).join('');
+      resDiv.innerHTML = `<span class="badge badge-fail">✗ Verification failed</span><ul style="margin:6px 0 0 16px;font-size:.85rem">${problems}</ul>`;
+    }
+    if ((d.capacity_warnings || []).length) {
+      for (const w of d.capacity_warnings) {
+        resDiv.insertAdjacentHTML('beforeend', `<div class="warn-box" style="margin-top:6px">⚠ ${w.message}</div>`);
+      }
+    }
+  } catch(e) {
+    resDiv.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+  }
 }
 
 // ── Error helper ────────────────────────────────────────────────────────

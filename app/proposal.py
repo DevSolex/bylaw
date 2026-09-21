@@ -59,7 +59,7 @@ def _vault_summary(vaults: list[Vault]) -> str:
             "redemption_days": v.redemption_days,
             "risk": v.risk,
             "paused": v.paused,
-            "available_liquidity_usdc": v.available_liquidity_usdc,
+            "total_assets_usdc": v.total_assets_usdc,
         })
     return json.dumps(rows, indent=2)
 

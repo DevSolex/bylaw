@@ -255,6 +255,61 @@ def api_decision(run_id: str, req: DecisionRequest):
 
 
 # ---------------------------------------------------------------------------
+# Manual adjustment — re-verify without calling the model
+# ---------------------------------------------------------------------------
+
+class AdjustRequest(BaseModel):
+    allocation: dict[str, float]   # vault_id → weight, must sum to 1
+
+
+@app.post("/api/runs/{run_id}/adjust", tags=["pipeline"])
+def api_adjust(run_id: str, req: AdjustRequest):
+    """
+    Re-verify a manually adjusted allocation without calling the model.
+    Accepts a new weight dict, runs the verifier, saves result back to the run.
+    The model is not involved — this is a pure deterministic check.
+    """
+    from app.models import Proposal, RunFinal
+    from app.verifier import verify
+
+    run = load_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    if run.decision != "pending":
+        raise HTTPException(status_code=409, detail=f"Run already {run.decision}")
+
+    proposal = Proposal(allocation=req.allocation, rationale="[manually adjusted]")
+    result = verify(proposal, run.policy, run.vault_snapshot, run.input.amount_usdc)
+
+    cap_warns = capacity_warnings(
+        req.allocation, run.input.amount_usdc, run.vault_snapshot,
+        warn_share=settings.capacity_warn_share,
+    )
+
+    if result.passed:
+        run.final = RunFinal(
+            allocation=req.allocation,
+            rationale="[manually adjusted — not model-generated]",
+            verified=True,
+        )
+    else:
+        run.final = RunFinal(
+            verified=False,
+            reason="; ".join(result.problems),
+        )
+    save_run(run)
+
+    return {
+        "run_id": run.id,
+        "verified": result.passed,
+        "allocation": req.allocation if result.passed else None,
+        "problems": result.problems,
+        "checklist": result.model_dump()["checklist"],
+        "capacity_warnings": cap_warns,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Audit log
 # ---------------------------------------------------------------------------
 

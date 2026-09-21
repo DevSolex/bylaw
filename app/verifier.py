@@ -251,20 +251,20 @@ def verify(
         _pass(rule, "no constraint")
 
     # ------------------------------------------------------------------
-    # Rule 9: Allocation does not exceed available_liquidity_usdc
+    # Rule 9: Allocation does not exceed total_assets_usdc
     # ------------------------------------------------------------------
-    rule = "R9: available liquidity cap"
+    rule = "R9: total assets cap"
     cap_violations: list[str] = []
     for vid, w in allocation.items():
         if vid not in vault_by_id:
             continue
-        cap = vault_by_id[vid].available_liquidity_usdc
+        cap = vault_by_id[vid].total_assets_usdc
         if cap is None:
             continue
         allocated_usdc = w * amount_usdc
         if allocated_usdc > cap + _GENERIC_TOL:
             cap_violations.append(
-                f"{vid}: wants {allocated_usdc:.2f} USDC but only {cap:.2f} available"
+                f"{vid}: wants {allocated_usdc:.2f} USDC but vault TVL is only {cap:.2f}"
             )
     if cap_violations:
         _fail(rule, "; ".join(cap_violations))
@@ -400,7 +400,7 @@ def _lp_feasibility(
       - Σ_{liquid_i} w[i] ≥ min_liquid
       - Σ risk[i]*w[i] ≤ max_avg_risk
       - Σ apy[i]*w[i] ≥ min_avg_apy  (if set and all APYs known)
-      - w[i] * amount_usdc ≤ available_liquidity_usdc[i]  (if cap known)
+      - w[i] * amount_usdc ≤ total_assets_usdc[i]  (if cap known)
 
     Returns {"feasible": bool, "conflict_rules": list[str]}.
     """
@@ -447,13 +447,13 @@ def _lp_feasibility(
             A_ub.append([-float(a) for a in apys])  # type: ignore[arg-type]
             b_ub.append(-policy.min_avg_apy)
 
-    # ── Per-vault caps from available_liquidity_usdc ──────────────────
+    # ── Per-vault caps from total_assets_usdc ──────────────────
     for i, v in enumerate(active):
-        if v.available_liquidity_usdc is not None:
+        if v.total_assets_usdc is not None:
             row = [0.0] * n
             row[i] = amount_usdc
             A_ub.append(row)
-            b_ub.append(v.available_liquidity_usdc)
+            b_ub.append(v.total_assets_usdc)
 
     # ── Bounds: 0 ≤ w[i] ≤ max_per_vault ─────────────────────────────
     bounds = [(0.0, policy.max_per_vault)] * n

@@ -20,7 +20,15 @@ _RUNS_DIR = Path("/app/data/runs")
 
 
 def _ensure_dir() -> Path:
-    _RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        _RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        # Fallback to a temp dir when the volume isn't writable (e.g. in tests
+        # run without the docker-compose volume).
+        import tempfile
+        fallback = Path(tempfile.gettempdir()) / "bylaw_runs"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
     return _RUNS_DIR
 
 

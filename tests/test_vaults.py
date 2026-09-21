@@ -167,8 +167,8 @@ class TestIXSAdapter:
         """totalAssets / 10^18 should be ~654.37 (BSC USDC = 18 dec, confirmed)."""
         with self._live():
             v = IXSAdapter().list_vaults()[0]
-        assert v.available_liquidity_usdc is not None
-        assert 600 < v.available_liquidity_usdc < 700
+        assert v.total_assets_usdc is not None
+        assert 600 < v.total_assets_usdc < 700
 
     def test_asset_symbol_read_live(self):
         """asset() and asset.symbol() should return 'USDC'."""
@@ -180,7 +180,7 @@ class TestIXSAdapter:
         with self._live():
             v = IXSAdapter().list_vaults()[0]
         assert v.data_sources["paused"] == "live"
-        assert v.data_sources["available_liquidity_usdc"] == "live"
+        assert v.data_sources["total_assets_usdc"] == "live"
 
     def test_curated_fields_labeled_curated(self):
         with self._live():
@@ -218,7 +218,7 @@ class TestCapacityWarnings:
 
     def test_no_warning_within_threshold(self):
         v = Vault(id="v1", name="V1", chain="eth", asset="USDC",
-                  risk=2, available_liquidity_usdc=1_000_000,
+                  risk=2, total_assets_usdc=1_000_000,
                   fetched_at=self._now())
         # 5% of 100k = 5k, TVL 1M → 0.5% share < 10% threshold
         warns = capacity_warnings({"v1": 0.05}, 100_000, [v])
@@ -226,7 +226,7 @@ class TestCapacityWarnings:
 
     def test_warning_when_exceeds_threshold(self):
         v = Vault(id="ixs-rwa-bnb", name="IXS", chain="bsc", asset="USDC",
-                  risk=4, available_liquidity_usdc=654,
+                  risk=4, total_assets_usdc=654,
                   fetched_at=self._now())
         # 50% of 100k = 50k, TVL 654 → way over 10%
         warns = capacity_warnings({"ixs-rwa-bnb": 0.5}, 100_000, [v])
@@ -236,7 +236,7 @@ class TestCapacityWarnings:
 
     def test_warning_message_mentions_demo_budget(self):
         v = Vault(id="v1", name="Small Vault", chain="eth", asset="USDC",
-                  risk=2, available_liquidity_usdc=500,
+                  risk=2, total_assets_usdc=500,
                   fetched_at=self._now())
         warns = capacity_warnings({"v1": 0.2}, 100_000, [v])
         assert warns
@@ -245,7 +245,7 @@ class TestCapacityWarnings:
 
     def test_no_warning_when_no_tvl_data(self):
         v = Vault(id="v1", name="V1", chain="eth", asset="USDC",
-                  risk=2, available_liquidity_usdc=None,
+                  risk=2, total_assets_usdc=None,
                   fetched_at=self._now())
         warns = capacity_warnings({"v1": 0.5}, 100_000, [v])
         assert warns == []

@@ -2,7 +2,6 @@ services:
   app:
     build: .
     image: bylaw:latest
-    container_name: bylaw
     ports:
       # Host port is configurable via BYLAW_PORT (default 8000).
       # Change it in .env when 8000 is busy: BYLAW_PORT=8080

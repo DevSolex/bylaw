@@ -60,6 +60,8 @@ _KEY_ALIASES: dict[str, str] = {
     "max_weight_per_vault": "max_per_vault",
     "max_vault_concentration": "max_per_vault",
     "max_concentration_per_vault": "max_per_vault",
+    "max_single_vault_allocation": "max_per_vault",
+    "single_vault_max": "max_per_vault",
     "min_liquidity": "min_liquid",
     "min_liquid_fraction": "min_liquid",
     "min_liquid_ratio": "min_liquid",

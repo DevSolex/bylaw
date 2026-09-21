@@ -67,12 +67,12 @@ vaults:
     risk: 4
     risk_note: "private RWA credit, async redemption, BSC protocol; project heuristic"
     paused: false
-    available_liquidity_usdc: null
+    total_assets_usdc: null
 
     as_of: "2026-09-20"
     data_sources:
       paused: "live"
-      available_liquidity_usdc: "live"
+      total_assets_usdc: "live"
       apy: "curated"
       redemption_days: "curated"
       risk: "curated"
@@ -90,14 +90,14 @@ vaults:
     risk: 1
     risk_note: "govt-bill exposure, instant sync redemption; project heuristic"
     paused: false
-    available_liquidity_usdc: null
+    total_assets_usdc: null
     as_of: "2026-09-20"
     data_sources:
       apy: "curated"
       redemption_days: "curated"
       risk: "curated"
       paused: "simulated"
-      available_liquidity_usdc: "simulated"
+      total_assets_usdc: "simulated"
 
   - id: mock-bond
     name: "Investment-Grade Bond Vault"
@@ -110,14 +110,14 @@ vaults:
     risk: 3
     risk_note: "IG corporate exposure, 3-day redemption; project heuristic"
     paused: false
-    available_liquidity_usdc: null
+    total_assets_usdc: null
     as_of: "2026-09-20"
     data_sources:
       apy: "curated"
       redemption_days: "curated"
       risk: "curated"
       paused: "simulated"
-      available_liquidity_usdc: "simulated"
+      total_assets_usdc: "simulated"
 
   - id: mock-credit
     name: "Private Credit Pool"
@@ -130,14 +130,14 @@ vaults:
     risk: 4
     risk_note: "private credit, 30-day async redemption; project heuristic"
     paused: false
-    available_liquidity_usdc: null
+    total_assets_usdc: null
     as_of: "2026-09-20"
     data_sources:
       apy: "curated"
       redemption_days: "curated"
       risk: "curated"
       paused: "simulated"
-      available_liquidity_usdc: "simulated"
+      total_assets_usdc: "simulated"
 
   - id: mock-mm
     name: "Money Market Stablecoin Vault"
@@ -150,14 +150,14 @@ vaults:
     risk: 2
     risk_note: "stablecoin money-market, instant redemption, smart-contract risk; project heuristic"
     paused: false
-    available_liquidity_usdc: null
+    total_assets_usdc: null
     as_of: "2026-09-20"
     data_sources:
       apy: "curated"
       redemption_days: "curated"
       risk: "curated"
       paused: "simulated"
-      available_liquidity_usdc: "simulated"
+      total_assets_usdc: "simulated"
 
   - id: mock-paused
     name: "Paused Demo Vault"
@@ -169,11 +169,11 @@ vaults:
     risk: 3
     paused: true
     paused_note: "vault is paused for maintenance — no allocation permitted"
-    available_liquidity_usdc: null
+    total_assets_usdc: null
     as_of: "2026-09-20"
     data_sources:
       apy: "simulated"
       redemption_days: "simulated"
       risk: "curated"
       paused: "simulated"
-      available_liquidity_usdc: "simulated"
+      total_assets_usdc: "simulated"

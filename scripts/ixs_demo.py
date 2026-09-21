@@ -15,9 +15,19 @@ from app.vaults.mock import build_mock_vaults
 from app.vaults.curated import CuratedAdapter
 from app.vaults.ixs import capacity_warnings
 
-# IXS curated + simulated peers
+# IXS curated + simulated peers.
+# Inject the confirmed live TVL (~654 USDC) into the curated IXS vault so the
+# capacity warning fires. In production the IXSAdapter reads this live.
 curated = CuratedAdapter().list_vaults()
-ixs = next((v for v in curated if v.id == "ixs-rwa-bnb"), None)
+ixs_curated = next((v for v in curated if v.id == "ixs-rwa-bnb"), None)
+if ixs_curated:
+    ixs = ixs_curated.model_copy(update={
+        "total_assets_usdc": 654.37,   # confirmed live 2026-09-20
+        "price_per_share": 1.08859600, # confirmed live 2026-09-20
+        "live_read_at": None,          # curated snapshot, not a live read
+    })
+else:
+    ixs = None
 mock = [v for v in build_mock_vaults() if not v.id.startswith("ixs")]
 vaults = ([ixs] if ixs else []) + mock
 
@@ -32,7 +42,7 @@ for v in vaults:
     if live: print(f"    LIVE    : {live}")
     if cur:  print(f"    curated : {cur}")
 
-AMOUNT = 5000.0   # small vs IXS TVL ~654 USDC → triggers capacity warning
+AMOUNT = 500.0    # realistic: close to IXS TVL (~654 USDC), triggers capacity warning
 # Policy where IXS is the ONLY vault that legitimately satisfies both constraints:
 # - Excludes pure-simulated high-yield vaults by capping risk at 4 (IXS qualifies)
 # - APY floor of 6.5% rules out T-Bill (5.2%) and Money Market (4.1%)

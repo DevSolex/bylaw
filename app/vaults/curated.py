@@ -35,7 +35,9 @@ def _parse_vault(raw: dict, fetched_at: datetime) -> Vault | None:
             settlement=_SETTLEMENT_MAP.get(raw.get("settlement", ""), None),
             risk=raw["risk"],
             paused=raw.get("paused"),
-            available_liquidity_usdc=raw.get("available_liquidity_usdc"),
+            total_assets_usdc=raw.get("total_assets_usdc"),
+            price_per_share=raw.get("price_per_share"),
+            as_of=raw.get("as_of"),
             data_sources=data_sources,
             fetched_at=fetched_at,
         )

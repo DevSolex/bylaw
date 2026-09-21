@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Ensure the data directory exists and is owned by appuser
-RUN mkdir -p /app/data && chown -R appuser:appuser /app
+RUN mkdir -p /app/data/runs && chown -R appuser:appuser /app
 
 USER appuser
 

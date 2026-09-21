@@ -31,7 +31,7 @@ def make_vault(
     settlement: str | None = "sync",
     risk: int = 2,
     paused: bool | None = False,
-    available_liquidity_usdc: float | None = None,
+    total_assets_usdc: float | None = None,
     data_sources: dict | None = None,
 ) -> Vault:
     return Vault(
@@ -44,7 +44,7 @@ def make_vault(
         settlement=settlement,
         risk=risk,
         paused=paused,
-        available_liquidity_usdc=available_liquidity_usdc,
+        total_assets_usdc=total_assets_usdc,
         data_sources=data_sources or {},
         fetched_at=_NOW,
     )
@@ -63,9 +63,9 @@ def make_proposal(allocation: dict[str, float], rationale: str = "test") -> Prop
 # ---------------------------------------------------------------------------
 
 V1 = make_vault(id="v1", risk=2, apy=0.06, redemption_days=1, paused=False,
-                available_liquidity_usdc=None)
+                total_assets_usdc=None)
 V2 = make_vault(id="v2", risk=4, apy=0.10, redemption_days=7, paused=False,
-                available_liquidity_usdc=None)
+                total_assets_usdc=None)
 VAULTS = [V1, V2]
 AMOUNT = 100_000.0
 
@@ -359,7 +359,7 @@ def test_r9_pass_no_cap():
 
 
 def test_r9_pass_within_cap():
-    capped_v = make_vault(id="vc", available_liquidity_usdc=60_000.0)
+    capped_v = make_vault(id="vc", total_assets_usdc=60_000.0)
     vaults = [capped_v, V2]
     # 50% of 100k = 50k < 60k cap
     result = verify(make_proposal({"vc": 0.5, "v2": 0.5}), make_policy(), vaults, AMOUNT)
@@ -368,7 +368,7 @@ def test_r9_pass_within_cap():
 
 
 def test_r9_fail_exceeds_cap():
-    capped_v = make_vault(id="vc", available_liquidity_usdc=40_000.0)
+    capped_v = make_vault(id="vc", total_assets_usdc=40_000.0)
     vaults = [capped_v, V2]
     # 50% of 100k = 50k > 40k cap
     result = verify(make_proposal({"vc": 0.5, "v2": 0.5}), make_policy(), vaults, AMOUNT)
@@ -453,7 +453,7 @@ def test_feasibility_feasible_single_vault():
 def test_feasibility_respects_liquidity_cap():
     # Cap is 40k, amount is 100k, so no single-vault allocation can put > 40% in the capped vault
     # With max_per_vault=1.0 this might still be feasible if we can go 40/60 split
-    capped_v = make_vault(id="vc", available_liquidity_usdc=40_000.0, risk=2)
+    capped_v = make_vault(id="vc", total_assets_usdc=40_000.0, risk=2)
     other_v = make_vault(id="vo", risk=2)
     vaults = [capped_v, other_v]
     policy = make_policy()  # no tight constraints

@@ -16,7 +16,7 @@ from app.vaults.base import VaultAdapter
 logger = logging.getLogger(__name__)
 
 _SIM: dict[str, str] = {f: "simulated" for f in
-    ["apy", "redemption_days", "risk", "paused", "available_liquidity_usdc"]}
+    ["apy", "redemption_days", "risk", "paused", "total_assets_usdc"]}
 
 
 def _now() -> datetime:
@@ -30,35 +30,35 @@ def build_mock_vaults() -> list[Vault]:
             id="mock-tbill", name="T-Bill Yield Fund",
             chain="ethereum", asset="USDC",
             apy=0.052, redemption_days=0, settlement="sync",
-            risk=1, paused=False, available_liquidity_usdc=None,
+            risk=1, paused=False, 
             data_sources=_SIM, fetched_at=now,
         ),
         Vault(
             id="mock-bond", name="Investment-Grade Bond Vault",
             chain="ethereum", asset="USDC",
             apy=0.079, redemption_days=3, settlement="sync",
-            risk=3, paused=False, available_liquidity_usdc=None,
+            risk=3, paused=False, 
             data_sources=_SIM, fetched_at=now,
         ),
         Vault(
             id="mock-credit", name="Private Credit Pool",
             chain="ethereum", asset="USDC",
             apy=0.112, redemption_days=30, settlement="async",
-            risk=4, paused=False, available_liquidity_usdc=None,
+            risk=4, paused=False, 
             data_sources=_SIM, fetched_at=now,
         ),
         Vault(
             id="mock-mm", name="Money Market Stablecoin Vault",
             chain="polygon", asset="USDC",
             apy=0.041, redemption_days=0, settlement="sync",
-            risk=2, paused=False, available_liquidity_usdc=None,
+            risk=2, paused=False, 
             data_sources=_SIM, fetched_at=now,
         ),
         Vault(
             id="mock-paused", name="Paused Demo Vault",
             chain="ethereum", asset="USDC",
             apy=0.090, redemption_days=7, settlement="async",
-            risk=3, paused=True, available_liquidity_usdc=None,
+            risk=3, paused=True, 
             data_sources=_SIM, fetched_at=now,
         ),
     ]
