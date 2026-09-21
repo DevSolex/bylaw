@@ -58,6 +58,8 @@ _KEY_ALIASES: dict[str, str] = {
     "max_single_vault": "max_per_vault",
     "max_per_vault_allocation": "max_per_vault",
     "max_weight_per_vault": "max_per_vault",
+    "max_vault_concentration": "max_per_vault",
+    "max_concentration_per_vault": "max_per_vault",
     "min_liquidity": "min_liquid",
     "min_liquid_fraction": "min_liquid",
     "min_liquid_ratio": "min_liquid",
@@ -161,13 +163,16 @@ def parse_policy(
     all_aliases: list[str] = []
     last_error: str = ""
     last_raw: str = ""
+    # Step tracking
+    _current_step = "policy_parse"
 
     for attempt in range(2):  # 0 = first try; 1 = repair retry
-        _check_and_increment(call_counter, max_calls, "policy parse")
+        _check_and_increment(call_counter, max_calls, _current_step)
 
         if attempt == 0:
             messages = [{"role": "user", "content": user_msg}]
         else:
+            _current_step = "policy_repair"
             messages = [
                 {"role": "user", "content": user_msg},
                 {"role": "assistant", "content": last_raw},
@@ -186,7 +191,7 @@ def parse_policy(
             system=_SYSTEM_PROMPT,
             response_format={"type": "json_object"},
         )
-        _log_and_update(resp, call_counter[0], meta)
+        _log_and_update(resp, call_counter[0], meta, step=_current_step)
         last_raw = resp.content
 
         try:
@@ -202,16 +207,17 @@ def parse_policy(
                 ) from exc
             continue
 
-        if unknown and attempt == 0:
-            # Unknown keys after normalisation → repair retry
+        # Only trigger repair for truly unrecognised keys (aliases are fine)
+        truly_unknown = [k for k in unknown if k not in _KEY_ALIASES and k not in _CANONICAL_KEYS]
+        if truly_unknown and attempt == 0:
             last_error = (
-                f"response contained unrecognised keys: {unknown}. "
+                f"response contained unrecognised keys: {truly_unknown}. "
                 f"Use only these key names: {sorted(_CANONICAL_KEYS)}"
             )
-            logger.warning("policy parse attempt %d: %s", attempt + 1, last_error)
+            logger.warning("policy parse: truly unknown keys %s — repair retry", truly_unknown)
             continue
 
-        # Drop the unknown keys silently on the repair attempt and proceed
+        # Aliases and unknown-after-normalisation silently dropped
         raw_json = normalised
         break
 
@@ -262,12 +268,13 @@ def _check_and_increment(counter: list[int], max_calls: int, context: str) -> No
     counter[0] += 1
 
 
-def _log_and_update(resp: ServResponse, call_number: int, meta: "ModelMeta | None") -> None:
+def _log_and_update(resp: ServResponse, call_number: int, meta: "ModelMeta | None", step: str = "") -> None:
     """Log token usage and accumulate into meta if provided."""
     logger.info(
-        "SERV call #%d  model=%s  latency=%.0fms  "
+        "SERV call #%d [%s]  model=%s  latency=%.0fms  "
         "prompt=%s completion=%s total=%s",
         call_number,
+        step or "?",
         resp.model,
         resp.latency_ms,
         resp.prompt_tokens,
@@ -279,15 +286,33 @@ def _log_and_update(resp: ServResponse, call_number: int, meta: "ModelMeta | Non
     meta.total_calls += 1
     meta.latency_ms = resp.latency_ms
     meta.model = resp.model
+    pt = resp.prompt_tokens or 0
+    ct = resp.completion_tokens or 0
+    tt = resp.total_tokens or 0
     if resp.prompt_tokens is not None:
-        meta.run_prompt_tokens += resp.prompt_tokens
+        meta.run_prompt_tokens += pt
         meta.prompt_tokens = resp.prompt_tokens
     if resp.completion_tokens is not None:
-        meta.run_completion_tokens += resp.completion_tokens
+        meta.run_completion_tokens += ct
         meta.completion_tokens = resp.completion_tokens
     if resp.total_tokens is not None:
-        meta.run_total_tokens += resp.total_tokens
+        meta.run_total_tokens += tt
         meta.total_tokens = resp.total_tokens
+    # Per-step tracking
+    if step:
+        from app.models import StepMeta  # avoid circular at module level
+        # Merge into existing step entry if same step name, else append
+        existing = next((s for s in meta.steps if s.step == step), None)
+        if existing:
+            existing.calls += 1
+            existing.prompt_tokens += pt
+            existing.completion_tokens += ct
+            existing.total_tokens += tt
+        else:
+            meta.steps.append(StepMeta(
+                step=step, calls=1,
+                prompt_tokens=pt, completion_tokens=ct, total_tokens=tt,
+            ))
 
 
 # Keep old name for backward compat with any callers that imported it

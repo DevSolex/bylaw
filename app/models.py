@@ -29,6 +29,7 @@ class Vault(BaseModel):
     asset: str  # e.g. "USDC"
 
     apy: float | None = None                        # fraction; 0.07 == 7%
+    apy_label: str | None = None                    # e.g. "indicative: underlying ETF yield, not realized"
     redemption_days: int | None = None              # 0 means instant
     settlement: Literal["sync", "async"] | None = None
     risk: int = Field(..., ge=1, le=5)              # 1 lowest, 5 highest
@@ -142,6 +143,15 @@ class RunFinal(BaseModel):
 # ModelMeta — SERV call metadata (one entry per call, aggregated on Run)
 # ---------------------------------------------------------------------------
 
+class StepMeta(BaseModel):
+    """Token usage for one logical step within a Run."""
+    step: str          # "policy_parse", "policy_repair", "proposal_1", "proposal_2", ...
+    calls: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
 class ModelMeta(BaseModel):
     model_config = {"protected_namespaces": ()}
 
@@ -156,6 +166,9 @@ class ModelMeta(BaseModel):
     run_prompt_tokens: int = 0
     run_completion_tokens: int = 0
     run_total_tokens: int = 0
+
+    # Per-step breakdown (parse, repair, proposal attempts)
+    steps: list[StepMeta] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

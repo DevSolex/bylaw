@@ -202,7 +202,7 @@ def propose(
             response_format={"type": "json_object"},
             _stub_vaults=vaults,
         )
-        _log_and_update(resp, call_counter[0], meta)
+        _log_and_update(resp, call_counter[0], meta, step=f"proposal_{attempt_num}")
         logger.info(
             "proposal: running totals  calls=%d prompt=%d completion=%d total=%d",
             meta.total_calls,

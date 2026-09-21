@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # Raise if you need more headroom; lower to protect credit spend.
     serv_max_calls_per_run: int = 10
 
+    # Capacity warning threshold (0.0-1.0).
+    # Warn when an allocation exceeds this fraction of a vault's total assets.
+    capacity_warn_share: float = 0.10
+
     # Data mode
     data_mode: str = "simulated"  # live | mixed | simulated
 
