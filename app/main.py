@@ -1,13 +1,15 @@
 """
-Bylaw — FastAPI application. M4: full API + audit log.
+Bylaw — FastAPI application.
 """
 from __future__ import annotations
 
 import logging
 import os
+import traceback
+import uuid
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -19,7 +21,7 @@ from app.models import (
 )
 from app.policy import parse_policy, CallLimitError, PolicyParseError
 from app.proposal import propose
-from app.runs import list_runs, load_run, new_run_id, save_run
+from app.runs import list_runs, load_run, new_run_id, save_run, run_status
 from app.serv_client import ServClient
 from app.vaults import get_vaults
 from app.vaults.ixs import capacity_warnings
@@ -32,6 +34,33 @@ app = FastAPI(
     description="Policy-driven allocator for tokenized RWA yield vaults.",
     version="0.4.0",
 )
+
+
+# ---------------------------------------------------------------------------
+# Global exception handler — always returns JSON, never plain-text 500
+# ---------------------------------------------------------------------------
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    request_id = uuid.uuid4().hex[:8]
+    logger.error("Unhandled exception [req=%s] %s: %s",
+                 request_id, type(exc).__name__, exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "internal_server_error",
+            "detail": f"{type(exc).__name__}: {exc}",
+            "request_id": request_id,
+        },
+    )
+
+
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": "request_error", "detail": exc.detail},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +160,20 @@ def api_parse_policy(req: ParseRequest):
 
 @app.post("/api/propose", tags=["pipeline"])
 def api_propose(req: ProposeRequest):
+    try:
+        return _do_propose(req)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        request_id = uuid.uuid4().hex[:8]
+        logger.error("propose error [req=%s]: %s", request_id, exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Proposal failed: {type(exc).__name__}: {exc} [req={request_id}]",
+        )
+
+
+def _do_propose(req: ProposeRequest):
     # Resolve policy
     if req.policy_text:
         client = ServClient()
@@ -322,6 +365,7 @@ def api_list_runs():
             {
                 "id": r.id,
                 "created_at": r.created_at.isoformat(),
+                "status": run_status(r),
                 "decision": r.decision,
                 "verified": r.final.verified if r.final else None,
                 "amount_usdc": r.input.amount_usdc,

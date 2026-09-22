@@ -1,7 +1,7 @@
 # Secrets — never commit
 .env
 
-# Runtime data (docker volume)
+# Runtime data (docker volume) — runs and backups never committed
 data/*
 !data/.gitkeep
 

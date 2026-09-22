@@ -3,6 +3,7 @@ app/runs.py — audit log store.
 
 Runs are saved as JSON files in ./data/runs/<id>.json.
 The ./data directory is a Docker volume so runs survive restarts.
+Tests patch _RUNS_DIR via tests/conftest.py — never written to the real path.
 """
 from __future__ import annotations
 
@@ -23,8 +24,6 @@ def _ensure_dir() -> Path:
     try:
         _RUNS_DIR.mkdir(parents=True, exist_ok=True)
     except PermissionError:
-        # Fallback to a temp dir when the volume isn't writable (e.g. in tests
-        # run without the docker-compose volume).
         import tempfile
         fallback = Path(tempfile.gettempdir()) / "bylaw_runs"
         fallback.mkdir(parents=True, exist_ok=True)
@@ -54,13 +53,25 @@ def load_run(run_id: str) -> Run | None:
         return None
 
 
-def list_runs(limit: int = 100) -> list[Run]:
+def list_runs(limit: int = 200) -> list[Run]:
     d = _ensure_dir()
-    paths = sorted(d.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     runs: list[Run] = []
-    for p in paths[:limit]:
+    for p in d.glob("*.json"):
         try:
             runs.append(Run.model_validate_json(p.read_text(encoding="utf-8")))
         except Exception as exc:
             logger.warning("skipping corrupt run file %s: %s", p.name, exc)
-    return runs
+    # Sort by created_at descending — authoritative, not mtime
+    runs.sort(key=lambda r: r.created_at, reverse=True)
+    return runs[:limit]
+
+
+def run_status(run: Run) -> str:
+    """Human-readable status for the history list."""
+    if run.decision in ("approved", "rejected"):
+        return run.decision
+    if run.final is None:
+        return "pending"
+    if run.final.verified:
+        return "pending"          # verified but awaiting user decision
+    return "failed verification"

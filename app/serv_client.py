@@ -228,6 +228,10 @@ class ServClient:
         # ── Offline stub ───────────────────────────────────────────────
         if self._offline:
             logger.debug("ServClient: offline stub (OFFLINE_DEMO=1)")
+            system_content = system or _DEFAULT_SYSTEM
+            # Use the policy stub when the system prompt is the policy extractor
+            if "extractor" in system_content.lower() or "extract" in system_content.lower():
+                return _make_policy_stub(self._model)
             return _make_stub_proposal(_stub_vaults, self._model)
 
         # ── Build message list ─────────────────────────────────────────

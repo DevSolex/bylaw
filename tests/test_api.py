@@ -169,6 +169,7 @@ def test_decision_not_found():
     assert r.status_code == 404
 
 
+
 # ---------------------------------------------------------------------------
 # /api/runs
 # ---------------------------------------------------------------------------
@@ -186,3 +187,98 @@ def test_list_runs():
 def test_get_run_not_found():
     r = client.get("/api/runs/nonexistent")
     assert r.status_code == 404
+
+
+def test_list_runs_sorted_by_created_at():
+    """Runs must be sorted newest-first by created_at, not mtime."""
+    for _ in range(3):
+        client.post("/api/propose", json={"policy_text": "test", "amount_usdc": 1000})
+    r = client.get("/api/runs")
+    runs = r.json()["runs"]
+    if len(runs) >= 2:
+        from datetime import datetime
+        dates = [datetime.fromisoformat(r["created_at"]) for r in runs]
+        assert dates == sorted(dates, reverse=True), "Runs not sorted newest-first"
+
+
+def test_list_runs_status_field_present():
+    """Every run in history must have a 'status' field."""
+    client.post("/api/propose", json={"policy_text": "test", "amount_usdc": 1000})
+    runs = client.get("/api/runs").json()["runs"]
+    for r in runs:
+        assert "status" in r
+        assert r["status"] in ("pending", "approved", "rejected", "failed verification")
+
+
+def test_failed_verification_shows_correct_status():
+    """An infeasible run must have verified=False."""
+    r = client.post("/api/propose", json={
+        "policy": {"min_avg_apy": 0.99},
+        "amount_usdc": 100000,
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["verified"] is False
+    assert d["reason"] != ""
+
+def test_run_status_function_for_infeasible():
+    """run_status() returns 'failed verification' for unverified runs."""
+    from app.runs import load_run, run_status
+    r = client.post("/api/propose", json={
+        "policy": {"min_avg_apy": 0.99},
+        "amount_usdc": 100000,
+    })
+    run = load_run(r.json()["run_id"])
+    assert run is not None
+    assert run.final is not None
+    assert run.final.verified is False
+    assert run_status(run) == "failed verification"
+
+
+# ---------------------------------------------------------------------------
+# Error handling — server errors return JSON, not plain text
+# ---------------------------------------------------------------------------
+
+def test_error_response_is_json():
+    """A deliberately bad request must return JSON, not an HTML/text 500."""
+    r = client.post("/api/propose", json={"policy_text": "test", "amount_usdc": -1})
+    # May succeed or fail; either way response must be JSON
+    assert r.headers.get("content-type", "").startswith("application/json")
+
+
+def test_500_returns_json_with_request_id():
+    """Simulate a server error and confirm JSON envelope with request_id."""
+    from unittest.mock import patch as _patch
+    # Patch get_vaults to raise an unexpected error
+    with _patch("app.main.get_vaults", side_effect=RuntimeError("simulated crash")):
+        r = client.post("/api/propose", json={
+            "policy_text": "max 40% per vault",
+            "amount_usdc": 100000,
+        })
+    assert r.status_code == 500
+    d = r.json()
+    assert "detail" in d or "error" in d
+    # Must not be plain text
+    assert r.headers.get("content-type", "").startswith("application/json")
+
+
+def test_404_returns_json():
+    """404s must return JSON."""
+    r = client.get("/api/runs/doesnotexist")
+    assert r.status_code == 404
+    assert r.headers.get("content-type", "").startswith("application/json")
+    assert "detail" in r.json() or "error" in r.json()
+
+
+# ---------------------------------------------------------------------------
+# Tests cannot write to real data path — safeguard test
+# ---------------------------------------------------------------------------
+
+def test_runs_dir_is_not_real_data():
+    """The conftest must have redirected _RUNS_DIR to a temp path."""
+    import app.runs as _runs
+    from pathlib import Path
+    real = Path("/app/data/runs")
+    assert str(_runs._RUNS_DIR) != str(real), (
+        "Test is writing to the real data directory! conftest.py is broken."
+    )

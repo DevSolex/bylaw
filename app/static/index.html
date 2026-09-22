@@ -313,7 +313,15 @@ async function runPropose() {
     hide('loading-propose');
 
     if (!resp.ok) {
-      $('result-content').innerHTML = `<div class="error">${d.detail || 'Unknown error'}</div>`;
+      let errMsg = 'Unknown error';
+      try {
+        const errData = await resp.json();
+        errMsg = errData.detail || errData.error || JSON.stringify(errData);
+      } catch(_) {
+        errMsg = `HTTP ${resp.status}`;
+      }
+      $('result-content').innerHTML = `<div class="error">${errMsg}</div>`;
+      hide('loading-propose');
       return;
     }
 
@@ -558,14 +566,16 @@ async function loadHistory() {
     }
     ul.innerHTML = '';
     for (const r of d.runs) {
-      const decBadge = r.decision === 'approved'
-        ? '<span class="badge badge-pass">approved</span>'
-        : r.decision === 'rejected'
-        ? '<span class="badge badge-fail">rejected</span>'
-        : '<span class="badge badge-simulated">pending</span>';
-      const verBadge = r.verified
+      const status = r.status || r.decision || 'pending';
+      const badgeClass =
+        status === 'approved'            ? 'badge-pass' :
+        status === 'rejected'            ? 'badge-fail' :
+        status === 'failed verification' ? 'badge-fail' :
+        status === 'pending'             ? 'badge-simulated' : 'badge-curated';
+      const decBadge = `<span class="badge ${badgeClass}">${status}</span>`;
+      const verBadge = r.verified === true
         ? '<span class="badge badge-pass">verified</span>'
-        : r.verified === false
+        : r.verified === false && status !== 'failed verification'
         ? '<span class="badge badge-fail">unverified</span>'
         : '';
       ul.insertAdjacentHTML('beforeend', `<li>
