@@ -39,8 +39,8 @@ docker compose run --rm app pytest -q
 | `SERV_API_KEY` | *(required)* | OpenServ API key |
 | `SERV_BASE_URL` | `https://inference-api.openserv.ai/v1` | SERV inference endpoint |
 | `SERV_MODEL` | `serv-model-placeholder` | Model name (see [OQ-5](docs/OPEN_QUESTIONS.md)) |
-| `DATA_MODE` | `simulated` | `live`, `mixed`, or `simulated` |
-| `OFFLINE_DEMO` | `1` | Set to `0` for live model calls |
+| `DATA_MODE` | `mixed` | `live`, `mixed`, or `simulated`. **`mixed` is recommended** — shows the live IXS vault on BNB Smart Chain alongside simulated peers. Falls back to curated snapshot if the RPC is unavailable. |
+| `OFFLINE_DEMO` | `1` | `0` = use real SERV API (recommended for judges). `1` = stub all model calls. **Independent of `DATA_MODE`**: vault data (IXS live RPC) is always fetched regardless of this flag. Tests always force `OFFLINE_DEMO=1` via `conftest.py`. |
 | `BYLAW_PORT` | `8000` | Host port for `docker compose up` (change when 8000 is busy) |
 | `SERV_MAX_CALLS_PER_RUN` | `10` | Cap on SERV calls per Run |
 | `CAPACITY_WARN_SHARE` | `0.10` | Warn when allocation exceeds this fraction of vault TVL |

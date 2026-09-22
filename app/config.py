@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     capacity_warn_share: float = 0.10
 
     # Data mode
-    data_mode: str = "simulated"  # live | mixed | simulated
+    data_mode: str = "mixed"   # live | mixed | simulated — default mixed shows live IXS vault
 
     # Offline demo stub — default True so tests never need a real API key.
     # Set OFFLINE_DEMO=0 in .env for live usage.
