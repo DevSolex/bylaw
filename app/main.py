@@ -242,6 +242,8 @@ def _do_propose(req: ProposeRequest):
             a.result.model_dump() for a in attempts
         ],
         "capacity_warnings": cap_warns,
+        "policy": policy.model_dump(),
+        "captured_constraints": policy.model_dump(exclude_defaults=True),
         "serv_calls": meta.total_calls,
         "tokens": {
             "prompt": meta.run_prompt_tokens,

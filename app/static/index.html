@@ -361,9 +361,8 @@ async function runPropose() {
 
 function renderParsedPolicy(d, originalText) {
   const policy = d.policy || {};
-  const captured = d.captured_constraints || {};
+  const captured = d.captured_constraints || {};   // guard: never undefined
 
-  // Show offline badge
   const offlineBadge = d.offline_demo
     ? '<span class="badge badge-simulated">OFFLINE STUB</span>'
     : '';

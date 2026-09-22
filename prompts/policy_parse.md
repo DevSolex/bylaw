@@ -44,3 +44,9 @@ Output: {"min_liquid": 1.0, "liquid_days": 0, "min_avg_apy": 0.15}
 
 Policy: "Exclude any vault with redemption longer than 7 days."
 Output: {"max_redemption_days": 7}
+
+Policy: "No more than 60% per vault. Avg risk <= 4. Min APY 6.5%. No vaults with redemption > 7 days."
+Output: {"max_per_vault": 0.60, "max_avg_risk": 4.0, "min_avg_apy": 0.065, "max_redemption_days": 7}
+
+Policy: "Maximum 50% concentration. Risk ceiling 3.5. Yield floor 7%. Exclude illiquid vaults (> 30 days)."
+Output: {"max_per_vault": 0.50, "max_avg_risk": 3.5, "min_avg_apy": 0.07, "max_redemption_days": 30}

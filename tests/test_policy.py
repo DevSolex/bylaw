@@ -224,3 +224,45 @@ def test_phrasing_robustness(desc, text, reply, field, expected):
     client = FakeServClient(reply=reply)
     policy = parse_policy(text, client, _counter(), max_calls=5)
     assert getattr(policy, field) == expected, f"Failed for: {desc}"
+
+
+def test_ixs_exact_policy_phrasing():
+    """
+    Regression: exact IXS demo policy must parse all four constraints.
+    Previously the UI showed 'No constraints captured' even though parsing
+    worked — root cause was captured_constraints missing from propose response.
+    """
+    payload = '{"max_per_vault": 0.6, "max_avg_risk": 4.0, "min_avg_apy": 0.065, "max_redemption_days": 7}'
+    client = FakeServClient(reply=payload)
+    policy = parse_policy(
+        "No more than 60% per vault. Avg risk <= 4. Min APY 6.5%. No vaults with redemption > 7 days.",
+        client, _counter(), max_calls=5,
+    )
+    assert policy.max_per_vault == 0.6
+    assert policy.max_avg_risk == 4.0
+    assert abs(policy.min_avg_apy - 0.065) < 1e-6
+    assert policy.max_redemption_days == 7
+    # Must not trigger a repair retry
+    assert client._call_index == 1
+
+
+def test_propose_response_includes_captured_constraints():
+    """The /api/propose response must include captured_constraints so the UI can display them."""
+    import os
+    os.environ["OFFLINE_DEMO"] = "1"
+    os.environ["DATA_MODE"] = "simulated"
+    import app.config as _cfg
+    _cfg.settings.offline_demo = True
+    _cfg.settings.data_mode = "simulated"
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    r = c.post("/api/propose", json={
+        "policy": {"max_per_vault": 0.6, "max_avg_risk": 4.0,
+                   "min_avg_apy": 0.065, "max_redemption_days": 7},
+        "amount_usdc": 500,
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert "captured_constraints" in d, "propose response must include captured_constraints"
+    assert "policy" in d, "propose response must include full policy"
